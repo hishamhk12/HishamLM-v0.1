@@ -244,9 +244,49 @@ dataset fingerprint `55c7694f…dbe1`، sampling متوازن لغويًا (عر
 - لكن المخرجات ما زالت في الغالب كلمات شبه صحيحة وليست جملًا ذات معنى: الموديل تعلّم إحصاءات الحروف والصرف وعلامات الترقيم وبعض الكلمات الشائعة. هو **underfitting** (val ما زال ينخفض عند الخطوة 6000).
 - الـ prompts العربية العامة تنجرف نحو مفردات After-Sales (التوصيل، التركيب، الفاتورة) بسبب oversampling الـ domain.
 
+## المرحلة الرابعة: BPE tokenizer مكتوب من الصفر + bits per character
+
+```bash
+.venv/bin/python -m tokenizer.train_bpe --vocab-size 4096          # merges من train فقط، بأوزان الـ sampling
+.venv/bin/python -m training.train --config configs/phase4/bpe_4096.json
+.venv/bin/python -m training.evaluate --checkpoint checkpoints/transformer_bpe4096/best.pt
+.venv/bin/python -m inference.domain_drift --checkpoint checkpoints/transformer_bpe4096/best.pt --samples 50 --seed 5000
+.venv/bin/python -m training.compare_runs transformer_corpus transformer_bpe1024 transformer_bpe2048 transformer_bpe4096
+```
+
+- `tokenizer/bpe_tokenizer.py`: pre-tokenization (كلمة مع المسافة قبلها، أرقام منفردة، رموز، مسافات) → حروف أساسية (تكرار ≥ 10 في train) → merges بالترتيب. الحروف النادرة/غير المعروفة تتحول إلى bytes الـ UTF-8 (byte fallback)، فلا يوجد `<unk>` و `decode(encode(text)) == text` دائمًا.
+- **BPC** (bits per character) = loss بالـ bits ÷ عدد الحروف الأصلية التي تمثلها الـ tokens المتوقعة. هو المقياس الوحيد القابل للمقارنة بين tokenizers مختلفة.
+- كل run يسجل `tokens_seen` و `chars_seen`، فنقارن عند نفس الحساب (نفس عدد الـ tokens) وعند نفس عدد الحروف المرئية.
+- `lr_decay_steps`: الـ cosine ينتهي عند خطوة محددة ثم يثبت عند `min_lr`، فإكمال run لاحقًا لا يرفع الـ learning rate فجأة.
+
+### النتائج (نفس البيانات والأوزان والـ seed والـ Transformer: 4 layers، 4 heads، dim 64، context 64 token)
+
+| | Char | BPE 1K | BPE 2K | BPE 4K | BPE 4K، After-Sales 10% |
+|---|---|---|---|---|---|
+| parameters | 237,696 | 334,464 | 465,536 | 727,680 | 727,680 |
+| tokens processed | 40.96M | 40.96M | 40.96M | 40.96M | 40.96M |
+| characters represented | 41.0M | 82.1M | 99.7M | 116.7M | 114.8M |
+| حروف لكل token / سياق بالحروف | 1.0 / 64 | 2.05 / 131 | 2.43 / 156 | 2.80 / 179 | 2.80 / 179 |
+| زمن التدريب | 22.7 د | 25.6 د | 30.1 د | 38.5 د | 37.5 د |
+| **A general test BPC** | 2.666 | 2.384 | 2.273 | **2.156** | 2.123 |
+| B After-Sales test BPC | 2.703 | 2.402 | 2.327 | **2.214** | 2.276 |
+| Arabic test BPC | 2.976 | 2.809 | 2.751 | **2.662** | 2.616 |
+| English test BPC | 2.508 | 2.168 | 2.029 | **1.898** | 1.872 |
+| val BPC عند 40M حرف مرئي | 2.685 | 2.458 | 2.308 | **2.179** | — |
+| فجوة A val − train | −0.007 | 0.056 | 0.138 | 0.254 | 0.169 |
+| أطول تطابق حرفي (max / median)، المرجع 31 / 19.5 | 18 / 14 | 26 / 16 | 51 / 16 | 41 / 20 | 31 / 18 |
+| انجراف prompts العربية العامة نحو After-Sales (150 عينة) | **123/150** | 8/150 | 3/150 | 7/150 | 8/150 |
+
+**القراءة:**
+- BPE أفضل فعلًا وليس مجرد ضغط: BPC أقل عند نفس الحساب **وعند نفس عدد الحروف المرئية**، على كل المجموعات.
+- التحسن في الإنجليزي (−24%) أكبر بكثير من العربي (−10.5%).
+- جزء من التحسن قد يعود لزيادة الـ parameters (كلها في embedding و output layer)؛ التجربة لا تفصل الأثرين.
+- مع vocab أكبر تكبر فجوة train/val، وتظهر جمل After-Sales محفوظة (33–51 حرفًا) لأن الـ domain يُرى ~100 مرة.
+- الكلمات أصبحت حقيقية في الغالب، لكن الجمل ما زالت بلا معنى متماسك.
+- الانجراف نحو After-Sales كان مشكلة character tokenizer أساسًا؛ تقليل حصة الـ domain إلى 10% لم يغير الانجراف (7 → 8 من 150)، لكنه حسّن General BPC (−0.03) وأضعف Domain BPC (+0.06) وقلل الـ overfitting.
+
 ## ما الذي ما زال غير موجود
 - بيانات تدريب حقيقية بحجم معقول (الشرط الأساسي لأي مقارنة ذات معنى).
-- Tokenizer أفضل (BPE مثلًا) — الحالي حرفي فقط.
 - weight tying، وأي تكبير للموديل.
 - مقاييس تقييم غير الـ loss.
 - لا يوجد RAG، chat، API، أو واجهة — عن قصد.
