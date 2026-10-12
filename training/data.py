@@ -11,6 +11,7 @@ from pathlib import Path
 
 import torch
 
+from tokenizer import load_tokenizer
 from tokenizer.char_tokenizer import CharTokenizer
 
 DOMAIN = "after_sales"
@@ -55,6 +56,8 @@ class TextData:
         self.evals = evals  # name -> 1-D LongTensor (validation and test sets)
         self.val_weights = val_weights  # which eval sets make up "val_loss", and how much each counts
         self.info = info or {}
+        # characters each token id stands for (1 for the character tokenizer): used for bits per character
+        self.char_len = torch.tensor(tokenizer.token_char_lengths(), dtype=torch.float) if tokenizer else None
 
     def train_batch(self, batch_size, context_length, generator=None):
         if len(self.names) == 1:
@@ -74,15 +77,17 @@ def legacy_data(raw_dir, val_fraction, tokenizer=None):
     return TextData(tokenizer, {"train": train}, {"train": 1.0}, {"val": val}, {"val": 1.0}, info)
 
 
-def prepared_data(dataset_dir, sampling="weights"):
+def prepared_data(dataset_dir, sampling="weights", tokenizer_path=None, domain_share=None):
     """Load a dataset written by data.prepare.
 
     sampling: "weights" (general sources by size) or "weights_language_balanced".
-    Evaluation sets: A = general (all general sources), B = After-Sales domain.
+    tokenizer_path: a tokenizer JSON (e.g. BPE); default is the dataset's character vocab.json.
+    domain_share: if given, the After-Sales weight; general weights are rescaled to keep their ratios.
+    Evaluation sets: A = general (all general sources, also split by language), B = After-Sales domain.
     """
     root = Path(dataset_dir)
     meta = json.loads((root / "meta.json").read_text(encoding="utf-8"))
-    tokenizer = CharTokenizer.load(root / "vocab.json")
+    tokenizer = load_tokenizer(tokenizer_path) if tokenizer_path else CharTokenizer.load(root / "vocab.json")
 
     def read(split, name):
         return (root / split / f"{name}.txt").read_text(encoding="utf-8")
@@ -90,13 +95,21 @@ def prepared_data(dataset_dir, sampling="weights"):
     def encode(text):
         return torch.tensor(tokenizer.encode(text), dtype=torch.long)
 
-    weights = meta["sampling"][sampling]
+    weights = dict(meta["sampling"][sampling])
+    if domain_share is not None:
+        scale = (1 - domain_share) / (1 - weights[DOMAIN])
+        weights = {n: (domain_share if n == DOMAIN else w * scale) for n, w in weights.items()}
     general = [n for n in weights if n != DOMAIN]
+    by_language = {}
+    for n in general:
+        by_language.setdefault(meta["sources"][n]["language"], []).append(n)
     train = {n: encode(read("train", n)) for n in weights}
     evals = {}
     for split in ("val", "test"):
         evals[f"A_general_{split}"] = encode("\n\n".join(read(split, n) for n in general))
         evals[f"B_domain_{split}"] = encode(read(split, DOMAIN))
+        for lang, names in sorted(by_language.items()):
+            evals[f"A_{lang}_{split}"] = encode("\n\n".join(read(split, n) for n in names))
     # Checkpoints are chosen on a validation loss mixed like the training data.
     val_weights = {"A_general_val": 1 - weights[DOMAIN], "B_domain_val": weights[DOMAIN]}
     info = {"dataset": str(dataset_dir), "fingerprint": meta["dataset_fingerprint"], "sampling": sampling,

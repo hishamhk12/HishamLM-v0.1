@@ -15,6 +15,8 @@ class TrainConfig:
     val_fraction: float = 0.1  # legacy data_dir mode only
     dataset: str = ""  # prepared dataset dir (data.prepare); when set, data_dir/val_fraction are ignored
     sampling: str = "weights"  # "weights" or "weights_language_balanced" (from the dataset's meta.json)
+    domain_share: float | None = None  # override the After-Sales sampling share (general sources rescaled)
+    tokenizer: str = ""  # tokenizer JSON (e.g. a BPE file); empty = the dataset's character vocab.json
 
     # model (shared)
     context_length: int = 16
@@ -36,6 +38,7 @@ class TrainConfig:
     lr_schedule: str = "constant"  # "constant" or "cosine"
     warmup_steps: int = 0  # linear warmup from 0 to learning_rate
     min_lr: float = 0.0  # cosine schedule ends here
+    lr_decay_steps: int = 0  # cosine reaches min_lr at this step and stays there; 0 = max_steps
     early_stopping_patience: int = 0  # stop after this many evaluations without a better val loss; 0 = off
 
     # evaluation / logging

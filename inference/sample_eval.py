@@ -26,11 +26,20 @@ from training.config import TrainConfig
 from training.train import ROOT
 
 
+def generate_chars(model, tokenizer, prompt, n_chars, temperature, top_k, generator):
+    """Continue `prompt` until the continuation has n_chars characters (the same length for every tokenizer)."""
+    ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long)
+    n_prompt = ids.size(1)
+    while len(tokenizer.decode(ids[0, n_prompt:].tolist())) < n_chars:
+        ids = generate(model, ids, 1, temperature, top_k, generator)
+    return tokenizer.decode(ids[0, n_prompt:].tolist())[:n_chars]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--prompts", default="configs/eval_prompts.json")
-    parser.add_argument("--max-new-tokens", type=int, default=200)
+    parser.add_argument("--max-new-chars", type=int, default=200)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
@@ -50,8 +59,8 @@ def main():
     rng = random.Random(args.seed)
     refs = []
     for _ in range(args.reference_snippets):
-        start = rng.randrange(len(held_out) - args.max_new_tokens)
-        refs.append(memorization_report(held_out[start : start + args.max_new_tokens], train_text))
+        start = rng.randrange(len(held_out) - args.max_new_chars)
+        refs.append(memorization_report(held_out[start : start + args.max_new_chars], train_text))
     reference = {
         "longest_match_median": statistics.median(r["longest_match"] for r in refs),
         "longest_match_max": max(r["longest_match"] for r in refs),
@@ -63,10 +72,8 @@ def main():
     results = []
     for group, items in prompts.items():
         for prompt in items:
-            ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long)
             gen = torch.Generator().manual_seed(args.seed + len(results))  # a different seed for every prompt
-            out = generate(model, ids, args.max_new_tokens, args.temperature, args.top_k, gen)
-            continuation = tokenizer.decode(out[0, ids.size(1):].tolist())
+            continuation = generate_chars(model, tokenizer, prompt, args.max_new_chars, args.temperature, args.top_k, gen)
             report = memorization_report(continuation, train_text)
             result = {"group": group, "prompt": prompt, "prompt_in_train": prompt in train_text,
                       "continuation": continuation, **report, "copying_warning": is_copying(report)}

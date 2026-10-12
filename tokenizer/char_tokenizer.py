@@ -28,6 +28,10 @@ class CharTokenizer:
     def decode(self, ids):
         return "".join(self.itos[i] for i in ids)
 
+    def token_char_lengths(self):
+        """Characters each token represents: always 1 (including <unk>, which stands for one character)."""
+        return [1] * self.vocab_size
+
     def to_dict(self):
         return {"chars": self.itos[1:]}
 

@@ -42,11 +42,12 @@ class TestPieces(unittest.TestCase):
         model = TransformerLanguageModel(10, context_length=8, embedding_dim=16, n_heads=2, n_layers=1).eval()
         for n in (5, 9, 30, 31):
             for stride in (1, 3, 8):
-                _, count = stream_loss(model, torch.randint(10, (n,)), 8, stride)
+                _, count, chars = stream_loss(model, torch.randint(10, (n,)), 8, stride)
                 self.assertEqual(count, n - 1)
+                self.assertEqual(chars, n - 1)
         # with stride == context_length the windows do not overlap: compare to a direct computation
         ids = torch.randint(10, (25,))
-        loss, _ = stream_loss(model, ids, 8, 8)
+        loss, _, _ = stream_loss(model, ids, 8, 8)
         with torch.no_grad():
             nll = [F.cross_entropy(model(ids[None, s : s + 8])[0], ids[s + 1 : s + 9], reduction="sum") for s in (0, 8)]
             nll.append(F.cross_entropy(model(ids[None, 16:24])[0], ids[17:25], reduction="sum"))
@@ -93,7 +94,8 @@ class TestCorpusTraining(unittest.TestCase):
             self.assertEqual(meta["dataset_fingerprint"], dmeta["dataset_fingerprint"])
             self.assertEqual(torch.load(run_dir / "best.pt")["run_meta"]["seed"], cfg.seed)
             header = (run_dir / "log.csv").read_text(encoding="utf-8").splitlines()[0]
-            self.assertEqual(header, "step,train_loss,val_loss,A_general_val,B_domain_val,learning_rate,elapsed_time")
+            self.assertEqual(header, "step,train_loss,val_loss,train_bpc,val_bpc,A_general_val_bpc,B_domain_val_bpc,"
+                                     "learning_rate,tokens_seen,chars_seen,elapsed_time")
 
 
 if __name__ == "__main__":

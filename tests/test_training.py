@@ -51,7 +51,7 @@ class TestTraining(unittest.TestCase):
             self.assertTrue((run_dir / "latest.pt").exists())
             self.assertTrue((run_dir / "best.pt").exists())
             best = torch.load(run_dir / "best.pt")
-            self.assertEqual(best["val_loss"], result["best_val_loss"])
+            self.assertEqual(best["val_bpc"], result["best_val_bpc"])
 
             model, tokenizer, ckpt = load_checkpoint(run_dir / "latest.pt", "cpu")
             self.assertEqual(ckpt["step"], 6)

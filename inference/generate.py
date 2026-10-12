@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from model.build import build_model
+from tokenizer import tokenizer_from_dict
 from tokenizer.char_tokenizer import CharTokenizer
 from training.config import TrainConfig
 from training.utils import get_device, set_seed
@@ -19,7 +20,7 @@ from training.utils import get_device, set_seed
 def load_checkpoint(path, device):
     ckpt = torch.load(path, map_location=device)
     cfg = TrainConfig.from_dict(ckpt["config"])
-    tokenizer = CharTokenizer.from_dict(ckpt["tokenizer"])
+    tokenizer = tokenizer_from_dict(ckpt["tokenizer"])
     model = build_model(cfg, tokenizer.vocab_size).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -70,7 +71,8 @@ def main():
     prompt_ids = tokenizer.encode(args.prompt)
     if not prompt_ids:
         raise ValueError("prompt must contain at least one character")
-    unknown = sorted({ch for ch in args.prompt if ch not in tokenizer.stoi})
+    stoi = getattr(tokenizer, "stoi", None)  # BPE has byte fallback: nothing is unknown
+    unknown = sorted({ch for ch in args.prompt if stoi is not None and ch not in stoi})
     if unknown:
         print(f"warning: characters not in vocabulary, mapped to {CharTokenizer.UNK_TOKEN}: {unknown}")
 
