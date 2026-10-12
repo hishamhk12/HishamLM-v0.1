@@ -34,3 +34,24 @@ def clean_text(text):
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = _BLANK_LINES.sub("\n\n", text)
     return text.strip()
+
+
+def dedup_lines(docs, min_words=3, seen=None):
+    """Remove lines (with at least `min_words` words) already seen in an earlier document or line.
+
+    Short lines (headings, list labels) are kept. Pass the same `seen` set to dedup across calls.
+    """
+    seen = set() if seen is None else seen
+    removed, result = 0, []
+    for text in docs:
+        kept = []
+        for line in text.split("\n"):
+            key = " ".join(line.split())
+            if len(key.split()) >= min_words:
+                if key in seen:
+                    removed += 1
+                    continue
+                seen.add(key)
+            kept.append(line)
+        result.append(clean_text("\n".join(kept)))
+    return result, removed

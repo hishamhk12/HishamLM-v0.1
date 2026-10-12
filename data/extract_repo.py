@@ -13,13 +13,18 @@ Outputs in --out:
   docs/NNN_<name>.txt   cleaned, redacted, deduplicated text of each used file
   corpus.txt            all docs joined
   metadata.json         per-file source path, type, status, reason and character counts
+
+Evaluation sets found in the repository (question datasets and model evaluation outputs) are
+never used for training. They are copied to --eval-out as a held-out domain benchmark.
 """
 
 import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -27,7 +32,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
-from data.clean import clean_text
+from data.clean import clean_text, dedup_lines
 from data.stats import is_arabic, text_stats
 
 # ---------------------------------------------------------------------------
@@ -309,11 +314,42 @@ def pptx_to_text(path):
     return "\n".join(lines)
 
 
+def looks_reversed(line):
+    """PDF extraction sometimes outputs Arabic lines in reverse character order.
+
+    Reversed Arabic words show letters that cannot start a word (ة, ى, or a
+    tanween right after the first letter) or end in the reversed article "لا".
+    """
+    words = re.findall(r"[\u0621-\u0652]+", line)
+    marks = sum(
+        w[0] in "ةى" or (len(w) > 1 and w[1] in "\u064b\u064c\u064d") or (len(w) > 3 and w.endswith("لا"))
+        for w in words
+    )
+    return marks >= 2 or (words and marks / len(words) >= 0.3)
+
+
+def pdf_to_text(path):
+    """Plain text of a PDF page by page. Requires the optional `pypdf` package."""
+    from pypdf import PdfReader
+
+    # NFKC turns Arabic presentation forms (e.g. U+FEFB lam-alef ligature) back into normal letters.
+    pages = [unicodedata.normalize("NFKC", page.extract_text() or "") for page in PdfReader(path).pages]
+
+    # Headers/footers (title, author, "1 | Page") repeat on most pages: drop them.
+    def key(line):
+        return re.sub(r"\d+", "#", " ".join(line.split()))
+
+    repeats = Counter(k for page in pages for k in {key(l) for l in page.split("\n") if l.strip()})
+    repeated = {k for k, n in repeats.items() if n >= max(2, len(pages) // 2)}
+    lines = [l for page in pages for l in page.split("\n") if key(l) not in repeated]
+    return "\n".join(l for l in lines if not looks_reversed(l))
+
+
 # ---------------------------------------------------------------------------
 # Classification and extraction
 # ---------------------------------------------------------------------------
 
-def classify(rel_path, path):
+def classify(rel_path, path, include_pdfs=()):
     """Return (kind, exclusion_reason). exclusion_reason is None for files to extract."""
     parts, name, ext = rel_path.parts, path.name, path.suffix.lower()
     if any(p in DEPENDENCY_DIRS for p in parts):
@@ -337,7 +373,9 @@ def classify(rel_path, path):
     if ext == ".json":
         return "json", "structured/generated data (embeddings, evaluation outputs, extracted copies)"
     if ext == ".pdf":
-        return "pdf", "PDF text extraction not supported yet"
+        if rel_path.as_posix() in include_pdfs:
+            return "pdf", None
+        return "pdf", "PDF not selected (only reviewed PDFs are extracted, see --include-pdf)"
     if ext in CODE_EXT:
         if ".min." in name:
             return "code", "minified file"
@@ -374,6 +412,8 @@ def extract(path, kind):
     """Return (text, raw_source_or_None). The raw source is used for the secret scan."""
     if kind == "pptx":
         return pptx_to_text(path), None
+    if kind == "pdf":
+        return pdf_to_text(path), None
     src = path.read_text(encoding="utf-8-sig", errors="replace")
     if kind == "code":
         return code_to_text(src), src
@@ -384,22 +424,55 @@ def extract(path, kind):
     return src, src
 
 
-def dedup_lines(docs, min_words=3):
-    """Remove lines (with at least `min_words` words) already seen in an earlier document or line."""
-    seen, removed = set(), 0
-    result = []
-    for text in docs:
-        kept = []
-        for line in text.split("\n"):
-            key = " ".join(line.split())
-            if len(key.split()) >= min_words:
-                if key in seen:
-                    removed += 1
-                    continue
-                seen.add(key)
-            kept.append(line)
-        result.append(clean_text("\n".join(kept)))
-    return result, removed
+def is_question_dataset(rec):
+    """Question sets and model evaluation outputs: held out from training (set C)."""
+    name = Path(rec["path"]).name
+    if rec["type"] == "code" and re.search(r"dataset", name, re.IGNORECASE):
+        return True
+    return rec["type"] == "json" and "/evaluation/" in f"/{rec['path']}"
+
+
+def export_eval_set(repo, records, eval_dir):
+    """Copy held-out question files and collect their literal questions into questions.jsonl."""
+    raw_dir = eval_dir / "raw"
+    if raw_dir.exists():
+        shutil.rmtree(raw_dir)
+    raw_dir.mkdir(parents=True)
+    questions, seen = [], set()
+
+    def add(question, source, qid=None):
+        q = " ".join(str(question).split())
+        if q and q not in seen:
+            seen.add(q)
+            questions.append({"id": qid, "question": q, "source_file": source})
+
+    held_out = [r for r in records if is_question_dataset(r)]
+    for rec in held_out:
+        rec["status"], rec["reason"], rec["held_out"] = "excluded", "held-out domain benchmark (set C)", True
+        src = repo / rec["path"]
+        shutil.copy2(src, raw_dir / rec["path"].replace("/", "__"))
+        if rec["type"] == "json":
+            data = json.loads(src.read_text(encoding="utf-8-sig"))
+            for item in data.get("results", []) if isinstance(data, dict) else []:
+                if isinstance(item, dict) and item.get("question"):
+                    add(item["question"], rec["path"], item.get("id"))
+        else:
+            # Literal questions only; questions built from templates at runtime are skipped.
+            for literal in js_string_literals(src.read_text(encoding="utf-8")):
+                if re.search(r"[?؟]\s*$", literal) and "  " not in literal and "${" not in literal:
+                    add(literal, rec["path"])
+
+    with open(eval_dir / "questions.jsonl", "w", encoding="utf-8") as f:
+        for q in questions:
+            f.write(json.dumps(q, ensure_ascii=False) + "\n")
+    meta = {
+        "description": "After-Sales evaluation questions (set C). Never used for training or vocabulary.",
+        "files": [r["path"] for r in held_out],
+        "questions": len(questions),
+        "by_source": dict(Counter(q["source_file"] for q in questions)),
+    }
+    (eval_dir / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return questions
 
 
 def git_commit(repo):
@@ -409,14 +482,14 @@ def git_commit(repo):
         return None
 
 
-def run(repo, out_dir):
+def run(repo, out_dir, eval_dir=None, include_pdfs=()):
     repo, out_dir = Path(repo).resolve(), Path(out_dir)
     files = sorted(p for p in repo.rglob("*") if p.is_file() and not any(part in SKIP_DIRS for part in p.relative_to(repo).parts))
 
     records, candidates = [], []
     for path in files:
         rel = path.relative_to(repo)
-        kind, reason = classify(rel, path)
+        kind, reason = classify(rel, path, include_pdfs)
         rec = {"path": rel.as_posix(), "type": kind, "bytes": path.stat().st_size, "status": "excluded", "reason": reason}
         records.append(rec)
         if reason:
@@ -450,6 +523,8 @@ def run(repo, out_dir):
             continue
         candidates.append((rec, text))
 
+    questions = export_eval_set(repo, records, Path(eval_dir)) if eval_dir else []
+
     # ---- deduplication: identical files, then repeated lines across files ----
     chars_before = sum(len(t) for _, t in candidates)
     unique, seen_hashes = [], {}
@@ -462,6 +537,14 @@ def run(repo, out_dir):
         unique.append((rec, text))
     deduped, lines_removed = dedup_lines([t for _, t in unique])
 
+    # ---- decontamination: training text must not contain the held-out questions ----
+    held_out_qs = [q["question"] for q in questions if len(q["question"]) >= 10]
+    decontaminated = 0
+    for i, text in enumerate(deduped):
+        kept = [line for line in text.split("\n") if not any(q in line for q in held_out_qs)]
+        decontaminated += text.count("\n") + 1 - len(kept)
+        deduped[i] = clean_text("\n".join(kept))
+
     # ---- write outputs ----
     docs_dir = out_dir / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
@@ -472,7 +555,8 @@ def run(repo, out_dir):
         if len(text) < 200:
             rec["reason"] = "almost entirely duplicated by earlier files"
             continue
-        out_name = f"{i:03d}_{re.sub(r'[^0-9A-Za-z؀-ۿ._-]+', '_', rec['path'])}.txt"
+        safe_name = re.sub(r"[^0-9A-Za-z\u0600-\u06FF._-]+", "_", rec["path"])
+        out_name = f"{i:03d}_{safe_name}.txt"
         (docs_dir / out_name).write_text(text + "\n", encoding="utf-8")
         rec.update(status="used", reason=None, chars_after_dedup=len(text), output=f"docs/{out_name}")
         used_texts.append(text)
@@ -489,6 +573,7 @@ def run(repo, out_dir):
         "chars_before_dedup": chars_before,
         "duplicate_files_removed": len(candidates) - len(unique),
         "duplicate_lines_removed": lines_removed,
+        "lines_removed_containing_held_out_questions": decontaminated,
         "chars_after_dedup": len(corpus),
         "corpus_sha256": hashlib.sha256(corpus.encode("utf-8")).hexdigest(),
         "arabic_pct": round(stats["arabic_pct"], 2),
@@ -497,6 +582,10 @@ def run(repo, out_dir):
         "used_by_type": dict(Counter(r["type"] for r in used)),
         "excluded_by_reason": dict(Counter(r["reason"] for r in records if r["status"] == "excluded")),
         "redactions": dict(sum((Counter(r.get("redactions", {})) for r in used), Counter())),
+        "held_out_files": [r["path"] for r in records if r.get("held_out")],
+        "held_out_questions": len(questions),
+        # questions that appear word for word in the training text would leak the benchmark
+        "held_out_questions_found_in_corpus": sum(q["question"] in corpus for q in questions),
     }
     meta = {
         "source_repo": str(repo),
@@ -513,9 +602,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, help="path to a local clone (read only)")
     parser.add_argument("--out", default="data/processed/domain_after_sales")
+    parser.add_argument("--eval-out", default="data/processed/eval_after_sales_questions")
+    parser.add_argument("--include-pdf", action="append", default=[], help="repo-relative path of a reviewed PDF")
     args = parser.parse_args()
 
-    meta = run(args.repo, args.out)
+    meta = run(args.repo, args.out, args.eval_out, set(args.include_pdf))
     print(json.dumps(meta["summary"], ensure_ascii=False, indent=2))
 
 

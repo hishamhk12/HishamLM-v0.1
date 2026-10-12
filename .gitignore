@@ -5,3 +5,4 @@ checkpoints/*
 !checkpoints/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/raw/general/

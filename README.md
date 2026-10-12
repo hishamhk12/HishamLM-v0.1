@@ -192,6 +192,26 @@ loss من 4.2345 (≈ ln 69) إلى 0.2908 على train؛ val ينخفض إلى 
 - أفضل val loss متساوٍ تقريبًا (2.32 مقابل 2.33). البيانات (233 حرف validation، وهي آخر 3 أسطر إنجليزية) لا تسمح بالحكم على أي architecture أفضل.
 - الأرقام ليست قابلة للمقارنة تمامًا: context مختلف (16 مقابل 64)، dropout في الـ Transformer فقط، والتقييم كل 200 خطوة فقط.
 
+## المرحلة الثالثة: البيانات (قيد العمل — لم يبدأ التدريب بعد)
+
+```bash
+.venv/bin/python -m data.download                       # المصادر العامة → data/raw/general/ + provenance.json
+.venv/bin/python -m data.extract_repo --repo /path/to/after-seals \
+    --include-pdf "assest/آلية عمل خدمة التوصيل في Odoo.pdf"   # domain corpus + held-out questions
+.venv/bin/python -m data.prepare                        # → data/processed/hishamlm_v1/
+.venv/bin/python -m data.stats --path data/processed/hishamlm_v1/train
+```
+
+- `data/sources.py`: كل مصدر عام مع رابط مثبّت على commit محدد، الترخيص، و sha256. والمصادر المرفوضة مع السبب.
+- `data/clean.py`: تنظيف محافظ (BOM، NFC، line endings، control chars، فراغات) بدون أي تغيير في الحروف العربية أو التشكيل.
+- `data/extract_repo.py`: يستخرج نص domain من ريبو (قراءة فقط) مع استبعاد الأسرار والبيانات الشخصية والملفات المولّدة، ويعزل ملفات التقييم كـ held-out benchmark.
+- `data/prepare.py`: dedup عبر كل المصادر، split بدون leakage (blocks للمصادر العامة، مستندات كاملة للـ domain)، vocabulary من train فقط، baselines، أوزان الـ sampling، و dataset fingerprint.
+
+مجموعات التقييم:
+- **A** general validation/test — language modeling عام.
+- **B** After-Sales held-out documents — نصوص domain لم تدخل التدريب.
+- **C** After-Sales evaluation questions — محجوزة لتقييم instruction/chat لاحقًا، لا تدخل التدريب ولا الـ vocabulary.
+
 ## ما الذي ما زال غير موجود
 - بيانات تدريب حقيقية بحجم معقول (الشرط الأساسي لأي مقارنة ذات معنى).
 - Tokenizer أفضل (BPE مثلًا) — الحالي حرفي فقط.
