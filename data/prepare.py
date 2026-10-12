@@ -288,6 +288,8 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
         split_texts[split][DOMAIN], dropped = decontaminate(split_texts[split][DOMAIN], split_texts["train"][DOMAIN])
         report[DOMAIN]["held_out_decontamination"][split] = {
             "chars_before": before, "chars_after": len(split_texts[split][DOMAIN]), "lines_dropped": dropped}
+        if not split_texts[split][DOMAIN]:
+            raise ValueError(f"domain {split} set is empty after decontamination: held-out documents repeat train")
     split_units += [{"source": DOMAIN, "unit": d, "chars": len(t), "split": assignment[d]} for d, t in docs[DOMAIN]]
 
     # ---- 4. vocabulary from train only ----

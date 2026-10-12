@@ -19,8 +19,13 @@ def write_fixture(root):
     (raw / "ntrex_ar.txt").write_text("\n".join(AR_LINES) + "\n", encoding="utf-8")
     domain = root / "domain" / "nested"
     domain.mkdir(parents=True)
+    # every line differs within any 50 characters, so held-out documents do not repeat train
+    who = ["الفني", "السائق", "المشرف", "العميل", "المصمم", "المندوب", "المحاسب"]
+    act = ["يراجع", "يؤكد", "يحجز", "يلغي", "يعدل"]
+    what = ["الموعد", "الفاتورة", "المهمة", "الشحنة", "التذكرة", "القياسات"]
     for i in range(12):
-        lines = [f"المستند {i} سطر {j}: الفني يحجز موعد التركيب مع العميل بعد وصول الفاتورة." for j in range(30)]
+        lines = [f"{who[(i + j) % 7]} {i}{j} {act[(i * j) % 5]} {what[(i + 2 * j) % 6]} {j}{i} في الفرع {i * 31 + j}"
+                 f" ثم {who[(i * 3 + j) % 7]} {act[(j + 1) % 5]} {what[(i + j) % 6]} {i}-{j}." for j in range(30)]
         (domain / f"doc{i:02d}.txt").write_text("\n".join(lines), encoding="utf-8")
     (domain / "doc00.txt").write_text((domain / "doc00.txt").read_text(encoding="utf-8") + "\nرمز نادر §", encoding="utf-8")
     (root / "questions.jsonl").write_text(json.dumps({"question": QUESTION}, ensure_ascii=False) + "\n", encoding="utf-8")
