@@ -1,0 +1,3 @@
+torch>=2.0
+# not used by our code; torch prints a warning on import when numpy is missing
+numpy

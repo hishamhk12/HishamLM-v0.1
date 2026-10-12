@@ -1,0 +1,23 @@
+The cat sat on the mat. The dog sat on the rug. The bird sat on the tree.
+The cat is small. The dog is big. The bird is fast.
+A small cat likes milk. A big dog likes bones. A fast bird likes seeds.
+The sun is hot. The moon is cold. The sky is blue. The grass is green.
+In the morning the sun rises. In the evening the sun sets.
+In the morning the bird sings. In the evening the dog sleeps.
+I read a book. You read a book. We read a book together.
+I write a letter. You write a letter. We write a letter together.
+The model reads text. The model learns patterns. The model writes text.
+One step at a time, the model learns. One step at a time, the loss goes down.
+Small steps make big progress. Small models learn small patterns.
+The cat sat on the mat and the dog sat on the rug.
+The bird sang in the tree and the sun was hot.
+The sky was blue and the grass was green.
+A cat, a dog and a bird lived in a small house.
+The house had a red door and a green window.
+Every morning the cat opened the red door.
+Every evening the dog closed the green window.
+The bird sang and the cat sat and the dog slept.
+This is a small text for a small model.
+This text is only for testing the training pipeline.
+If the loss goes down, the model is learning.
+If the model can write words, the pipeline works.
