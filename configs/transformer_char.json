@@ -1,5 +1,6 @@
 {
-  "run_name": "tiny_char",
+  "run_name": "transformer_char",
+  "model_type": "transformer",
   "data_dir": "data/raw",
   "checkpoint_dir": "checkpoints",
   "seed": 42,
@@ -7,13 +8,16 @@
 
   "val_fraction": 0.1,
 
-  "context_length": 16,
-  "embedding_size": 24,
-  "hidden_size": 128,
+  "context_length": 64,
+  "embedding_dim": 64,
+  "n_heads": 4,
+  "n_layers": 4,
+  "dropout": 0.1,
 
   "batch_size": 32,
-  "learning_rate": 0.003,
+  "learning_rate": 0.001,
   "max_steps": 2000,
+  "grad_clip": 1.0,
 
   "eval_interval": 200,
   "eval_batches": 20
