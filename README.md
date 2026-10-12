@@ -227,6 +227,23 @@ loss من 4.2345 (≈ ln 69) إلى 0.2908 على train؛ val ينخفض إلى 
 - **B** After-Sales held-out documents — نصوص domain لم تدخل التدريب.
 - **C** After-Sales evaluation questions — محجوزة لتقييم instruction/chat لاحقًا، لا تدخل التدريب ولا الـ vocabulary.
 
+### نتيجة المرحلة الثالثة (Transformer 237,696 parameter، 6000 خطوة، CPU، 405 ثانية)
+
+dataset fingerprint `55c7694f…dbe1`، sampling متوازن لغويًا (عربي عام 41.25%، إنجليزي عام 41.25%، After-Sales 17.5%).
+
+| المجموعة | loss | perplexity | unigram baseline | uniform baseline |
+|---|---|---|---|---|
+| train (sampling mix) | 1.961 | 7.11 | — | 5.591 |
+| A general val | 1.929 | 6.88 | 3.652 | 5.591 |
+| A general test | 1.945 | 6.99 | 3.665 | 5.591 |
+| B After-Sales val | 1.850 | 6.36 | 3.934 | 5.591 |
+| B After-Sales test | 2.017 | 7.52 | 4.004 | 5.591 |
+
+- validation/test أقل بكثير من الـ unigram baseline، والفجوة بين train و val شبه معدومة: الموديل تعلّم أنماطًا تعمم على نص لم يره، ولم يحفظ النص.
+- فحص الـ memorization: أطول تطابق حرفي بين المخرجات و train هو 12–17 حرفًا، أقل من نص held-out حقيقي (median 19.5)، و 0% من الـ 32-grams منسوخة.
+- لكن المخرجات ما زالت في الغالب كلمات شبه صحيحة وليست جملًا ذات معنى: الموديل تعلّم إحصاءات الحروف والصرف وعلامات الترقيم وبعض الكلمات الشائعة. هو **underfitting** (val ما زال ينخفض عند الخطوة 6000).
+- الـ prompts العربية العامة تنجرف نحو مفردات After-Sales (التوصيل، التركيب، الفاتورة) بسبب oversampling الـ domain.
+
 ## ما الذي ما زال غير موجود
 - بيانات تدريب حقيقية بحجم معقول (الشرط الأساسي لأي مقارنة ذات معنى).
 - Tokenizer أفضل (BPE مثلًا) — الحالي حرفي فقط.

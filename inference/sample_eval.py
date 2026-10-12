@@ -62,9 +62,9 @@ def main():
     prompts = json.loads((ROOT / args.prompts).read_text(encoding="utf-8"))
     results = []
     for group, items in prompts.items():
-        for i, prompt in enumerate(items):
+        for prompt in items:
             ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long)
-            gen = torch.Generator().manual_seed(args.seed + i)
+            gen = torch.Generator().manual_seed(args.seed + len(results))  # a different seed for every prompt
             out = generate(model, ids, args.max_new_tokens, args.temperature, args.top_k, gen)
             continuation = tokenizer.decode(out[0, ids.size(1):].tolist())
             report = memorization_report(continuation, train_text)
