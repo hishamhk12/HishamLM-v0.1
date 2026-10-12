@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from data.prepare import PrepareConfig, assign_splits, fix_leading_punctuation, is_modern_arabic_sentence, make_blocks, prepare
+from data.prepare import (PrepareConfig, assign_splits, decontaminate, fix_leading_punctuation,
+                          is_modern_arabic_sentence, make_blocks, prepare)
 from tokenizer.char_tokenizer import CharTokenizer
 
 AR_LINES = [f"الجملة رقم {i} تتحدث عن موضوع جديد في المدينة." for i in range(400)]
@@ -39,6 +40,15 @@ class TestHelpers(unittest.TestCase):
         blocks = make_blocks(text, 500)
         self.assertEqual("\n".join(blocks), text)
         self.assertTrue(all(len(b) < 600 for b in blocks))
+
+    def test_decontaminate(self):
+        train = "مقدمة.\nلا ينتقل المنتج من التصنيع إلى التركيب مباشرة لأن خدمة التوصيل تقع بينهما في كل الحالات.\nملخص الدورة"
+        held_out = ("سطر جديد تمامًا عن موضوع آخر لم يظهر في التدريب.\n"
+                    "ملاحظة: لا ينتقل المنتج من التصنيع إلى التركيب مباشرة لأن خدمة التوصيل تقع بينهما في كل الحالات.\n"
+                    "ملخص الدورة")
+        cleaned, dropped = decontaminate(held_out, train)
+        self.assertEqual(cleaned, "سطر جديد تمامًا عن موضوع آخر لم يظهر في التدريب.")
+        self.assertEqual(dropped, 2)
 
     def test_split_is_deterministic(self):
         units = [(f"u{i}", 100) for i in range(100)]

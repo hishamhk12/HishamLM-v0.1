@@ -184,6 +184,29 @@ def assign_splits(units, val_frac, test_frac, seed, eligible=None):
 # Metrics
 # ---------------------------------------------------------------------------
 
+def decontaminate(held_out, train, window=50, step=10):
+    """Drop held-out lines that also occur in train, or share a `window`-character verbatim run with it.
+
+    Exact line dedup misses sentences that reappear inside different, longer lines
+    (common in the domain corpus, where several files render the same pages).
+    """
+    train_lines = {" ".join(l.split()) for l in train.split("\n") if l.strip()}
+    kept, dropped = [], 0
+    for line in held_out.split("\n"):
+        key = " ".join(line.split())
+        if key and (key in train_lines or any(line[i : i + window] in train for i in range(0, len(line) - window + 1, step))):
+            dropped += 1
+            continue
+        kept.append(line)
+    return clean_text("\n".join(kept)), dropped
+
+
+def shared_window_rate(held_out, train, window=50, step=50):
+    """Share of held-out `window`-character windows that appear verbatim in train (a leakage measure)."""
+    windows = [held_out[i : i + window] for i in range(0, len(held_out) - window + 1, step)]
+    return sum(w in train for w in windows) / max(len(windows), 1)
+
+
 def unk_rate(text, tokenizer):
     return sum(ch not in tokenizer.stoi for ch in text) / max(len(text), 1)
 
@@ -259,6 +282,12 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
         raise ValueError("no domain document could be held out; raise domain_max_doc_share")
     for split in SPLITS:
         split_texts[split][DOMAIN] = "\n\n".join(t for d, t in docs[DOMAIN] if assignment[d] == split)
+    report[DOMAIN]["held_out_decontamination"] = {}
+    for split in ("val", "test"):
+        before = len(split_texts[split][DOMAIN])
+        split_texts[split][DOMAIN], dropped = decontaminate(split_texts[split][DOMAIN], split_texts["train"][DOMAIN])
+        report[DOMAIN]["held_out_decontamination"][split] = {
+            "chars_before": before, "chars_after": len(split_texts[split][DOMAIN]), "lines_dropped": dropped}
     split_units += [{"source": DOMAIN, "unit": d, "chars": len(t), "split": assignment[d]} for d, t in docs[DOMAIN]]
 
     # ---- 4. vocabulary from train only ----
@@ -302,6 +331,15 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
     general_train = sum(train_chars[n] for n in general)
     weights = {n: (1 - cfg.domain_share) * train_chars[n] / general_train for n in general}
     weights[DOMAIN] = cfg.domain_share
+    # Alternative mix: the general share split equally between Arabic and English,
+    # then by size within each language.
+    languages = sorted({s["language"] for s in sources})
+    balanced = {DOMAIN: cfg.domain_share}
+    for lang in languages:
+        names = [s["name"] for s in sources if s["language"] == lang]
+        lang_chars = sum(train_chars[n] for n in names)
+        for n in names:
+            balanced[n] = (1 - cfg.domain_share) / len(languages) * train_chars[n] / lang_chars
     natural_share = train_chars[DOMAIN] / sum(train_chars.values())
 
     all_text = "\n".join(t for n in docs for _, t in docs[n])
@@ -335,6 +373,7 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
         },
         "sampling": {
             "weights": {n: round(w, 4) for n, w in weights.items()},
+            "weights_language_balanced": {n: round(w, 4) for n, w in balanced.items()},
             "domain_share_planned": cfg.domain_share,
             "domain_share_natural": round(natural_share, 4),
             "domain_oversampling_factor": round(cfg.domain_share / natural_share, 2),
@@ -342,6 +381,13 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
         "leakage_checks": {
             "train_lines_also_in_val_or_test": len(train_lines & held_out_lines),
             "held_out_questions_in_train": sum(q in train_text for q in questions),
+            # share of 50-character held-out windows found verbatim in the matching train text
+            "shared_50char_windows": {
+                "A_general": round(shared_window_rate(groups["A_general_val"] + groups["A_general_test"],
+                                                      "\n".join(split_texts["train"][n] for n in general)), 4),
+                "B_domain": round(shared_window_rate(groups["B_domain_val"] + groups["B_domain_test"],
+                                                     split_texts["train"][DOMAIN]), 4),
+            },
         },
         "split_units": split_units,
     }
