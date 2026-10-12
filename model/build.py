@@ -21,5 +21,6 @@ def build_model(cfg, vocab_size):
             n_heads=cfg.n_heads,
             n_layers=cfg.n_layers,
             dropout=cfg.dropout,
+            tie_weights=cfg.tie_weights,
         )
     raise ValueError(f"unknown model_type {cfg.model_type!r}, expected one of {MODEL_TYPES}")

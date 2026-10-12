@@ -46,7 +46,7 @@ class TransformerBlock(nn.Module):
 
 
 class TransformerLanguageModel(nn.Module):
-    def __init__(self, vocab_size, context_length, embedding_dim, n_heads, n_layers, dropout=0.0):
+    def __init__(self, vocab_size, context_length, embedding_dim, n_heads, n_layers, dropout=0.0, tie_weights=False):
         super().__init__()
         self.vocab_size = vocab_size
         self.context_length = context_length
@@ -59,8 +59,13 @@ class TransformerLanguageModel(nn.Module):
         )
         self.ln_f = nn.LayerNorm(embedding_dim)
         self.lm_head = nn.Linear(embedding_dim, vocab_size, bias=False)
+        self.tie_weights = tie_weights
 
         self._init_weights(n_layers)
+        if tie_weights:
+            # Weight tying: the output layer reuses the token embedding matrix (V x C),
+            # so "which vector represents token i" and "how to score token i" are the same parameters.
+            self.lm_head.weight = self.token_embedding.weight
 
     def _init_weights(self, n_layers):
         # Random init as in GPT-2: small normal weights, zero biases. LayerNorm
@@ -88,6 +93,24 @@ class TransformerLanguageModel(nn.Module):
             x = block(x)
         x = self.ln_f(x)
         return self.lm_head(x)  # (B, T, vocab_size)
+
+    def parameter_breakdown(self):
+        """Parameter count per component (a tied LM head adds no parameters of its own)."""
+        def count(modules):
+            return sum(p.numel() for m in modules for p in m.parameters())
+
+        blocks = self.blocks
+        parts = {
+            "token_embedding": self.token_embedding.weight.numel(),
+            "position_embedding": self.position_embedding.weight.numel(),
+            "attention": count(b.attn for b in blocks),
+            "ffn": count(b.ffn for b in blocks),
+            "layer_norms": count([b.ln1 for b in blocks] + [b.ln2 for b in blocks] + [self.ln_f]),
+            "lm_head": 0 if self.tie_weights else self.lm_head.weight.numel(),
+        }
+        parts["total"] = sum(parts.values())
+        assert parts["total"] == self.num_parameters()
+        return parts
 
     def num_parameters(self):
         return sum(p.numel() for p in self.parameters())

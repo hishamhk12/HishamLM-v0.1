@@ -94,3 +94,28 @@ class TestTransformerLanguageModel(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWeightTying(unittest.TestCase):
+    def test_tied_head_shares_the_embedding(self):
+        import tempfile
+        from pathlib import Path
+
+        untied = TransformerLanguageModel(V, T_MAX, C, H, L)
+        tied = TransformerLanguageModel(V, T_MAX, C, H, L, tie_weights=True)
+        self.assertIs(tied.lm_head.weight, tied.token_embedding.weight)
+        self.assertEqual(untied.num_parameters() - tied.num_parameters(), V * C)
+        for model in (tied, untied):
+            parts = model.parameter_breakdown()
+            self.assertEqual(parts["total"], model.num_parameters())
+        self.assertEqual(tied.parameter_breakdown()["lm_head"], 0)
+
+        # gradients from both uses reach the shared matrix, and saving/loading keeps the tie
+        tied(torch.randint(V, (2, T_MAX))).sum().backward()
+        self.assertIsNotNone(tied.token_embedding.weight.grad)
+        with tempfile.TemporaryDirectory() as d:
+            torch.save(tied.state_dict(), Path(d) / "m.pt")
+            loaded = TransformerLanguageModel(V, T_MAX, C, H, L, tie_weights=True)
+            loaded.load_state_dict(torch.load(Path(d) / "m.pt"))
+        self.assertIs(loaded.lm_head.weight, loaded.token_embedding.weight)
+        self.assertTrue(torch.equal(loaded.lm_head.weight, tied.token_embedding.weight))

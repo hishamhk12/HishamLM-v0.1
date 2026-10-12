@@ -29,6 +29,7 @@ class TrainConfig:
     n_heads: int = 4
     n_layers: int = 4
     dropout: float = 0.0
+    tie_weights: bool = False  # share the token embedding matrix with the LM head
 
     # optimization
     batch_size: int = 32

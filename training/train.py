@@ -186,6 +186,7 @@ def train(cfg, resume=False):
         "sampling_weights": dict(zip(data.names, [round(w, 4) for w in data.weights.tolist()])),
         "vocab_size": tokenizer.vocab_size,
         "num_parameters": model.num_parameters(),
+        "parameter_breakdown": model.parameter_breakdown() if hasattr(model, "parameter_breakdown") else None,
         "torch_version": str(torch.__version__),
         "python_version": platform.python_version(),
         "platform": platform.platform(),
@@ -271,6 +272,7 @@ def train(cfg, resume=False):
         print(describe(evaluate(0, learning_rate(0, cfg))))  # before any training
 
     stopped_early = False
+    grad_norm_max, clipped_steps, steps_run = 0.0, 0, 0
     for step in range(start_step + 1, cfg.max_steps + 1):
         lr = learning_rate(step, cfg)
         for group in optimizer.param_groups:
@@ -282,10 +284,15 @@ def train(cfg, resume=False):
         x, y = x.to(device), y.to(device)
 
         loss = compute_loss(model, x, y)  # forward pass + loss
+        if not torch.isfinite(loss):
+            raise FloatingPointError(f"loss became {loss.item()} at step {step}: training is unstable (lower the learning rate)")
         loss.backward()  # backward pass: compute gradients
         if cfg.grad_clip > 0:
             # rescale all gradients together if their overall norm exceeds grad_clip
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip).item()
+            grad_norm_max = max(grad_norm_max, grad_norm)
+            clipped_steps += grad_norm > cfg.grad_clip
+        steps_run += 1
         optimizer.step()  # update the weights
         optimizer.zero_grad(set_to_none=True)  # reset gradients for the next step
 
@@ -318,6 +325,9 @@ def train(cfg, resume=False):
         stopped_early=stopped_early,
         training_seconds=round(elapsed, 1),
         peak_rss_mb=round(peak_rss_mb, 1),
+        # stability of this session's steps: largest gradient norm and how often clipping kicked in
+        grad_norm_max=round(grad_norm_max, 4),
+        clipped_steps_fraction=round(clipped_steps / max(steps_run, 1), 4),
     )
     (out_dir / "run_meta.json").write_text(json.dumps(run_meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"done in {elapsed:.1f}s | best val {best_val:.4f} bpc at step {best_step} | peak RAM {peak_rss_mb:.0f} MB")
