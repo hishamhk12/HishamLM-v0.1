@@ -148,7 +148,9 @@ python3 -m venv .venv
 | `model_type` | `mlp` أو `transformer` |
 | `seed` | الـ random seed |
 | `device` | `auto` أو `cpu` أو `cuda` |
-| `val_fraction` | نسبة الـ validation من آخر النص |
+| `val_fraction` | (الوضع القديم فقط) نسبة الـ validation من آخر النص |
+| `dataset` | مجلد dataset جاهز من `data.prepare` (إذا وُجد يُتجاهل `data_dir`) |
+| `sampling` | `weights` (حسب الحجم) أو `weights_language_balanced` (عربي/إنجليزي بالتساوي) |
 | `context_length` | عدد الحروف التي يراها الموديل لكل توقع |
 | `embedding_dim` | حجم الـ embedding لكل حرف |
 | `hidden_size` | (MLP فقط) حجم الطبقة المخفية |
@@ -159,6 +161,10 @@ python3 -m venv .venv
 | `learning_rate` | معدل التعلم لـ AdamW |
 | `max_steps` | عدد خطوات التدريب |
 | `grad_clip` | أقصى norm للـ gradients (0 = بدون clipping) |
+| `lr_schedule` | `constant` أو `cosine` |
+| `warmup_steps` | زيادة خطية للـ learning rate من 0 في البداية |
+| `min_lr` | نهاية الـ cosine schedule |
+| `early_stopping_patience` | يتوقف التدريب بعد هذا العدد من التقييمات بدون تحسن في val (0 = معطل) |
 | `eval_interval` | كل كم خطوة نقيّم ونحفظ checkpoint |
 | `eval_batches` | عدد الـ batches في كل تقييم |
 
@@ -192,7 +198,7 @@ loss من 4.2345 (≈ ln 69) إلى 0.2908 على train؛ val ينخفض إلى 
 - أفضل val loss متساوٍ تقريبًا (2.32 مقابل 2.33). البيانات (233 حرف validation، وهي آخر 3 أسطر إنجليزية) لا تسمح بالحكم على أي architecture أفضل.
 - الأرقام ليست قابلة للمقارنة تمامًا: context مختلف (16 مقابل 64)، dropout في الـ Transformer فقط، والتقييم كل 200 خطوة فقط.
 
-## المرحلة الثالثة: البيانات (قيد العمل — لم يبدأ التدريب بعد)
+## المرحلة الثالثة: corpus حقيقية وتقييم الـ generalization
 
 ```bash
 .venv/bin/python -m data.download                       # المصادر العامة → data/raw/general/ + provenance.json
@@ -200,12 +206,21 @@ loss من 4.2345 (≈ ln 69) إلى 0.2908 على train؛ val ينخفض إلى 
     --include-pdf "assest/آلية عمل خدمة التوصيل في Odoo.pdf"   # domain corpus + held-out questions
 .venv/bin/python -m data.prepare                        # → data/processed/hishamlm_v1/
 .venv/bin/python -m data.stats --path data/processed/hishamlm_v1/train
+
+.venv/bin/python -m training.train --config configs/transformer_corpus.json       # التدريب
+.venv/bin/python -m training.evaluate --checkpoint checkpoints/transformer_corpus/best.pt     # loss + perplexity
+.venv/bin/python -m inference.sample_eval --checkpoint checkpoints/transformer_corpus/best.pt # prompts + memorization
 ```
 
 - `data/sources.py`: كل مصدر عام مع رابط مثبّت على commit محدد، الترخيص، و sha256. والمصادر المرفوضة مع السبب.
 - `data/clean.py`: تنظيف محافظ (BOM، NFC، line endings، control chars، فراغات) بدون أي تغيير في الحروف العربية أو التشكيل.
 - `data/extract_repo.py`: يستخرج نص domain من ريبو (قراءة فقط) مع استبعاد الأسرار والبيانات الشخصية والملفات المولّدة، ويعزل ملفات التقييم كـ held-out benchmark.
 - `data/prepare.py`: dedup عبر كل المصادر، split بدون leakage (blocks للمصادر العامة، مستندات كاملة للـ domain)، vocabulary من train فقط، baselines، أوزان الـ sampling، و dataset fingerprint.
+
+- `training/data.py`: كل مصدر stream مستقل؛ كل صف في الـ batch يختار مصدره حسب الأوزان (الـ weighting في الـ sampling، بدون نسخ ملفات).
+- `training/evaluate.py`: كل حرف في val/test يُقيَّم مرة واحدة (sliding windows، كل توقع يرى ≥ 32 حرف سياق).
+- `inference/sample_eval.py`: prompts ثابتة غير موجودة في train (`configs/eval_prompts.json`) + فحص memorization: أطول تطابق حرفي مع train ونسبة الـ 32-grams المنسوخة، مقارنةً بنصوص held-out حقيقية.
+- كل run يكتب `run_meta.json`: seed، config، git commit، dataset fingerprint، vocab size، parameters، إصدارات PyTorch/Python، RAM.
 
 مجموعات التقييم:
 - **A** general validation/test — language modeling عام.
@@ -215,6 +230,6 @@ loss من 4.2345 (≈ ln 69) إلى 0.2908 على train؛ val ينخفض إلى 
 ## ما الذي ما زال غير موجود
 - بيانات تدريب حقيقية بحجم معقول (الشرط الأساسي لأي مقارنة ذات معنى).
 - Tokenizer أفضل (BPE مثلًا) — الحالي حرفي فقط.
-- learning rate schedule (warmup / cosine)، weight tying، early stopping.
+- weight tying، وأي تكبير للموديل.
 - مقاييس تقييم غير الـ loss.
 - لا يوجد RAG، chat، API، أو واجهة — عن قصد.
