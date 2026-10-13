@@ -74,12 +74,18 @@ def bpc(loss, count, chars):
     return loss * count / (LN2 * chars)
 
 
-def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu", dataset=None):
-    """dataset: evaluate on another prepared dataset (same tokenizer) instead of the one the model was trained on."""
+def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu", dataset=None, context_length=None):
+    """dataset: evaluate on another prepared dataset (same tokenizer) instead of the one the model was trained on.
+    context_length: score with shorter windows than the model was trained with (how much does the extra context help?).
+    """
     model, tokenizer, ckpt = load_checkpoint(path, device)
     cfg = TrainConfig.from_dict(ckpt["config"])
     if dataset:
         cfg.dataset = dataset
+    if context_length:
+        if context_length > cfg.context_length:
+            raise ValueError(f"the model was trained with context {cfg.context_length}, cannot score {context_length}")
+        cfg.context_length = context_length
     data = load_data(cfg, tokenizer)
     stride = stride or cfg.context_length // 2
     results = {}
@@ -112,6 +118,7 @@ def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu"
         "dataset": cfg.dataset,
         "dataset_fingerprint": data.info.get("fingerprint"),
         "uniform_baseline_loss_per_token": math.log(tokenizer.vocab_size),
+        "context_length": cfg.context_length,
         "stride": stride,
         "results": results,
     }
@@ -123,10 +130,12 @@ def main():
     parser.add_argument("--max-train-chars", type=int, default=200_000)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dataset", help="evaluate on this prepared dataset instead of the training one")
+    parser.add_argument("--context-length", type=int, help="score with windows shorter than the trained context")
     parser.add_argument("--tag", default="", help="suffix for the output file name")
     args = parser.parse_args()
 
-    report = evaluate_checkpoint(args.checkpoint, args.max_train_chars, device=get_device(args.device), dataset=args.dataset)
+    report = evaluate_checkpoint(args.checkpoint, args.max_train_chars, device=get_device(args.device),
+                                 dataset=args.dataset, context_length=args.context_length)
     print(f"checkpoint {report['checkpoint']} (step {report['step']}) | {report['tokenizer']} vocab {report['vocab_size']}")
     print(f"{'set':26s} {'BPC':>7s} {'loss/tok':>9s} {'ppl/tok':>8s} {'unigram BPC':>12s} {'tokens':>8s} {'chars':>8s}")
     for name, r in report["results"].items():

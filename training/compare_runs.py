@@ -60,6 +60,7 @@ def summarize(run, train_chars):
         "run": run["name"],
         "tokenizer": f"{m['tokenizer'].replace('Tokenizer', '')} {m['vocab_size']}",
         "architecture (C x L x H)": f"{cfg.embedding_dim} x {cfg.n_layers} x {cfg.n_heads}",
+        "context length (tokens)": cfg.context_length,
         "weight tying": cfg.tie_weights,
         "learning rate": cfg.learning_rate,
         "parameters": m["num_parameters"],
@@ -82,9 +83,15 @@ def summarize(run, train_chars):
         "est. training PFLOPs": round(run["flops_per_token"] * m["tokens_seen"] / 1e15, 2) if run["flops_per_token"] else None,
         "stopped early": m["stopped_early"],
     })
-    for name in ("A_general", "B_domain", "A_ar", "A_en"):
+    for name in ("A_general", "B_domain", "A_ar", "A_en", "A_books"):
         for split in ("val", "test"):
-            s[f"{name}_{split} BPC"] = round(r[f"{name}_{split}"]["bpc"], 4)
+            if f"{name}_{split}" in r:
+                s[f"{name}_{split} BPC"] = round(r[f"{name}_{split}"]["bpc"], 4)
+    if "A_books_test" in r:
+        for split in ("val", "test"):
+            # all Arabic text: old Arabic sets + books, weighted by their characters
+            parts = [r[f"A_ar_{split}"], r[f"A_books_{split}"]]
+            s[f"all Arabic {split} BPC"] = round(sum(p["bpc"] * p["chars"] for p in parts) / sum(p["chars"] for p in parts), 4)
     s["train BPC (sampling mix)"] = round(r["train (sampling mix)"]["bpc"], 4)
     s["gap: A val - train"] = round(r["A_general_val"]["bpc"] - r["train (sampling mix)"]["bpc"], 4)
     if run["samples"]:
