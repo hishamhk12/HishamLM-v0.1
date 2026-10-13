@@ -44,6 +44,8 @@ def main():
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--reference-snippets", type=int, default=20)
+    parser.add_argument("--repeats", type=int, default=1, help="continuations per prompt (one seed each)")
+    parser.add_argument("--tag", default="", help="suffix for the output file name")
     args = parser.parse_args()
 
     model, tokenizer, ckpt = load_checkpoint(args.checkpoint, "cpu")
@@ -71,8 +73,8 @@ def main():
     prompts = json.loads((ROOT / args.prompts).read_text(encoding="utf-8"))
     results = []
     for group, items in prompts.items():
-        for prompt in items:
-            gen = torch.Generator().manual_seed(args.seed + len(results))  # a different seed for every prompt
+        for prompt in [p for p in items for _ in range(args.repeats)]:
+            gen = torch.Generator().manual_seed(args.seed + len(results))  # a different seed for every sample
             continuation = generate_chars(model, tokenizer, prompt, args.max_new_chars, args.temperature, args.top_k, gen)
             report = memorization_report(continuation, train_text)
             result = {"group": group, "prompt": prompt, "prompt_in_train": prompt in train_text,
@@ -83,7 +85,7 @@ def main():
             print(f"\n[{group}] {prompt}{seen}\n{prompt}{continuation}")
             print(f"  longest verbatim match {report['longest_match']} chars | 32-gram overlap {report['overlap_32gram']:.2f}{flag}")
 
-    out = Path(args.checkpoint).with_name(f"samples_{Path(args.checkpoint).stem}.json")
+    out = Path(args.checkpoint).with_name(f"samples_{Path(args.checkpoint).stem}{'_' + args.tag if args.tag else ''}.json")
     out.write_text(json.dumps({"checkpoint": args.checkpoint, "step": ckpt["step"], "settings": vars(args),
                                "reference": reference, "results": results}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nsaved {out}")

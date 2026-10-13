@@ -74,9 +74,12 @@ def bpc(loss, count, chars):
     return loss * count / (LN2 * chars)
 
 
-def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu"):
+def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu", dataset=None):
+    """dataset: evaluate on another prepared dataset (same tokenizer) instead of the one the model was trained on."""
     model, tokenizer, ckpt = load_checkpoint(path, device)
     cfg = TrainConfig.from_dict(ckpt["config"])
+    if dataset:
+        cfg.dataset = dataset
     data = load_data(cfg, tokenizer)
     stride = stride or cfg.context_length // 2
     results = {}
@@ -106,6 +109,7 @@ def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu"
         "step": ckpt["step"],
         "tokenizer": type(tokenizer).__name__,
         "vocab_size": tokenizer.vocab_size,
+        "dataset": cfg.dataset,
         "dataset_fingerprint": data.info.get("fingerprint"),
         "uniform_baseline_loss_per_token": math.log(tokenizer.vocab_size),
         "stride": stride,
@@ -118,16 +122,18 @@ def main():
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--max-train-chars", type=int, default=200_000)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--dataset", help="evaluate on this prepared dataset instead of the training one")
+    parser.add_argument("--tag", default="", help="suffix for the output file name")
     args = parser.parse_args()
 
-    report = evaluate_checkpoint(args.checkpoint, args.max_train_chars, device=get_device(args.device))
+    report = evaluate_checkpoint(args.checkpoint, args.max_train_chars, device=get_device(args.device), dataset=args.dataset)
     print(f"checkpoint {report['checkpoint']} (step {report['step']}) | {report['tokenizer']} vocab {report['vocab_size']}")
     print(f"{'set':26s} {'BPC':>7s} {'loss/tok':>9s} {'ppl/tok':>8s} {'unigram BPC':>12s} {'tokens':>8s} {'chars':>8s}")
     for name, r in report["results"].items():
         uni = r.get("unigram_baseline_bpc")
         print(f"{name:26s} {r['bpc']:7.4f} {r.get('loss', float('nan')):9.4f} {r.get('perplexity', float('nan')):8.2f} "
               f"{f'{uni:.4f}' if uni else '':>12s} {r.get('tokens', ''):>8} {r.get('chars', ''):>8}")
-    out = Path(args.checkpoint).with_name(f"eval_{Path(args.checkpoint).stem}.json")
+    out = Path(args.checkpoint).with_name(f"eval_{Path(args.checkpoint).stem}{'_' + args.tag if args.tag else ''}.json")
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"saved {out}")
 
