@@ -14,6 +14,7 @@ These are surface measures (word counts and overlaps). They do NOT measure under
   distinct_2             distinct word pairs / all word pairs (low = repetitive)
   repetition_4gram       share of word 4-grams that repeat an earlier one in the same text
   template_repeat        share of sentences starting with the same two words as an earlier sentence
+  fragment_rate          share of sentences with fewer than 4 words (broken-off fragments)
   connectives_per_100w   connecting words (because, however, ثم، لكن ...) per 100 words
   topic_term_rate        the prompt's topic words (listed in the prompt file) per 100 words
   topic_in_last_third    1 if a topic word still appears in the last third of the continuation
@@ -116,6 +117,7 @@ def text_measures(prompt, continuation, lexicon, topic_terms=None):
         "distinct_2": len(set(bigrams)) / max(len(bigrams), 1),
         "repetition_4gram": repeats / max(len(fourgrams), 1),
         "template_repeat": template / max(len(sents), 1),
+        "fragment_rate": sum(len(words(x)) < 4 for x in sents) / max(len(sents), 1),
         "connectives_per_100w": 100 * connective / max(len(ws), 1),
         "prompt_overlap_first": overlap(continuation[:half]),
         "prompt_overlap_last": overlap(continuation[half:]),
@@ -181,7 +183,7 @@ def main():
             if length >= 60:
                 raise ValueError(f"prompt shares {length} characters with the training text: {item['prompt'][:60]}")
 
-    text_keys = ["invented_word_rate", "words_per_sentence", "distinct_2", "repetition_4gram", "template_repeat",
+    text_keys = ["invented_word_rate", "words_per_sentence", "distinct_2", "repetition_4gram", "template_repeat", "fragment_rate",
                  "connectives_per_100w", "topic_term_rate", "topic_in_last_third", "prompt_overlap_first",
                  "prompt_overlap_last", "topic_drift", "sentence_continuity", "abrupt_shift_rate"]
     mem_keys = ["longest_match", "overlap_32gram", "overlap_50char"]
@@ -229,7 +231,7 @@ def main():
                          "overlap_50char": ngram_overlap(cont, train_text, 50, 5)})
         report["reference"][group] = summarize(rows, text_keys + mem_keys)
 
-    show = ["invented_word_rate", "words_per_sentence", "distinct_2", "repetition_4gram", "template_repeat",
+    show = ["invented_word_rate", "words_per_sentence", "distinct_2", "repetition_4gram", "template_repeat", "fragment_rate",
             "connectives_per_100w", "topic_term_rate", "topic_in_last_third", "topic_drift",
             "sentence_continuity", "abrupt_shift_rate", "longest_match", "overlap_32gram", "overlap_50char"]
     for group in prompts:
