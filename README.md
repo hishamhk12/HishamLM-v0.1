@@ -317,6 +317,36 @@ dataset fingerprint `55c7694f…dbe1`، sampling متوازن لغويًا (عر
 - عند نفس الحساب (0.10 PFLOPs) الأفضل 1.3M tied (val 2.050) مقابل 2.147 للـ baseline و 2.148 لـ 3.5M tied.
 - **الإعداد المختار: 1.3M tied، 20K خطوة** — أفضل توازن بين BPC والحفظ والوقت والذاكرة.
 
+## Dataset v2: كتب هنداوي العربية (خاصة)
+
+v2 = v1 + أربعة كتب عربية من هنداوي (1.38M حرف بعد التنظيف)، مستخدمة بإذن استخدام شخصي موقّع — **لا تُعاد مشاركتها ولا يُنشر موديل مدرّب عليها**. الكتب خارج git (`data/raw/private_books/`) ولا تدخل إلا بـ `--include-private`. مجموعات A و B لم تتغير؛ للكتب مجموعة تقييم خاصة `A_books`.
+
+```bash
+.venv/bin/python -m data.download --include-private
+.venv/bin/python -m data.prepare --include-private --out-dir data/processed/hishamlm_v2
+.venv/bin/python -m training.train --config configs/v2/bpe4k_1.3m_tied_v2.json
+.venv/bin/python -m training.evaluate --checkpoint checkpoints/transformer_bpe4k_1.3m_tied_20k/best.pt --dataset data/processed/hishamlm_v2 --tag v2sets
+.venv/bin/python -m inference.sample_eval --checkpoint ... --prompts configs/eval_prompts_long_ar.json --max-new-chars 400 --repeats 3 --tag long_ar
+.venv/bin/python -m inference.arabic_quality --samples .../samples_best_long_ar.json ...
+```
+
+### v1 مقابل v2 (نفس الموديل 1.3M tied، نفس BPE 4K، نفس الـ seed، 20K خطوة = 40.96M token، من random init)
+
+| test BPC | v1 | v2 | الفرق |
+|---|---|---|---|
+| Books | 3.020 | **2.286** | −0.733 |
+| كل العربي (العربي القديم + الكتب) | 2.764 | **2.376** | −0.388 |
+| العربي القديم (CV + NTREX + XQuAD) | **2.419** | 2.498 | +0.079 |
+| English | 1.765 | **1.758** | −0.007 |
+| General A | **1.985** | 2.007 | +0.022 |
+| After-Sales B | 2.156 | **2.090** | −0.067 |
+
+- العربي القديم ساء لأن الكتب أخذت 58% من حصته في الـ sampling (CV العربي من 24.9% إلى 10.5%) وأسلوبه مختلف (جمل قصيرة وأخبار).
+- الكلمات العربية غير الموجودة في معجم التدريب (prompts عربية طويلة، 18 عينة × 400 حرف): 20.5% → **11.5%** بمعجم v2، و 21.7% → 19.3% بمعجم v1 (بدون كتب)؛ النص الحقيقي 9.4% / 14.1%.
+- الجمل أطول (11.7 → 19.6 كلمة) وبروابط فقرات حقيقية، لكن المعنى ما زال غير مترابط، وظهر انجراف نحو مواضيع الكتب (الحوسبة، البيانات).
+- لا نسخ من الكتب: أطول تطابق في الـ prompts العربية الطويلة 29 حرفًا (المرجع 31).
+- BPE 4K القديم يغطي الكتب بكفاءة (2.53 حرف/token)؛ الـ byte fallback 0.25% من الحروف، كله تقريبًا أرقام عربية مشرقية (٠-٩).
+
 ## ما الذي ما زال غير موجود
 - بيانات تدريب حقيقية بحجم معقول (الشرط الأساسي لأي مقارنة ذات معنى).
 - بيانات أكثر (خصوصًا After-Sales وعربي أصلي) — هي الحد الحالي، لا حجم الموديل.
