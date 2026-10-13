@@ -99,7 +99,9 @@ def prepared_data(dataset_dir, sampling="weights", tokenizer_path=None, domain_s
     if domain_share is not None:
         scale = (1 - domain_share) / (1 - weights[DOMAIN])
         weights = {n: (domain_share if n == DOMAIN else w * scale) for n, w in weights.items()}
-    general = [n for n in weights if n != DOMAIN]
+    group_of = {n: meta["sources"][n].get("eval_group", "general") for n in weights if n != DOMAIN}
+    general = [n for n, g in group_of.items() if g == "general"]
+    other_groups = sorted({g for g in group_of.values() if g != "general"})  # e.g. private books
     by_language = {}
     for n in general:
         by_language.setdefault(meta["sources"][n]["language"], []).append(n)
@@ -110,6 +112,8 @@ def prepared_data(dataset_dir, sampling="weights", tokenizer_path=None, domain_s
         evals[f"B_domain_{split}"] = encode(read(split, DOMAIN))
         for lang, names in sorted(by_language.items()):
             evals[f"A_{lang}_{split}"] = encode("\n\n".join(read(split, n) for n in names))
+        for group in other_groups:
+            evals[f"A_{group}_{split}"] = encode("\n\n".join(read(split, n) for n, g in group_of.items() if g == group))
     # Checkpoints are chosen on a validation loss mixed like the training data.
     val_weights = {"A_general_val": 1 - weights[DOMAIN], "B_domain_val": weights[DOMAIN]}
     info = {"dataset": str(dataset_dir), "fingerprint": meta["dataset_fingerprint"], "sampling": sampling,

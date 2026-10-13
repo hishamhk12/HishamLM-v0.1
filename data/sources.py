@@ -73,7 +73,49 @@ SOURCES = [
     },
 ]
 
+# Sources that may NOT be redistributed. They are used only when explicitly requested
+# (python -m data.download --include-private / python -m data.prepare --include-private),
+# stored under data/raw/private_books/ (ignored by git), and any model trained on them stays private.
+_BOOKS_COMMIT = "e586234dfd07258590ba8cc3ce7b0e1dd40f03f6"
+_BOOKS_URL = f"https://media.githubusercontent.com/media/hishamhk12/HishamLM-v0.1/{_BOOKS_COMMIT}/data/private_books/raw/ar"
+
+PRIVATE_SOURCES = [
+    {
+        "name": "hindawi_books_ar",
+        "language": "ar",
+        "eval_group": "books",  # evaluated separately, so the v1 sets A and B keep their meaning
+        "private": True,
+        "description": "Four Arabic books published by Hindawi (EPUB), uploaded by the project owner.",
+        "repository": f"https://github.com/hishamhk12/HishamLM-v0.1 (commit {_BOOKS_COMMIT}, "
+                      "data/private_books/raw/ar, Git LFS)",
+        "license": "All rights reserved (per each book's copyright page); used under the project owner's "
+                   "signed personal-use permission",
+        "license_url": "",
+        "license_note": "Do not redistribute these books or publish models trained on them.",
+        "files": [
+            {"file": "the_machine.epub", "title": "الآلة قوة وسلطة", "author": "آر إيه بوكانان",
+             "rights": "Hindawi (design); translation text: شوقي جلال",
+             "url": f"{_BOOKS_URL}/13637483.epub",
+             "sha256": "3b699a5d4efe8bde10c21fbf47a624a3ffb736db128c000fef35b0a91429c682"},
+            {"file": "computational_thinking.epub", "title": "التفكير الحوسبي", "author": "بيتر جيه دنينج وماتي تيدري",
+             "rights": "Hindawi (design, Arabic translation); original text © 2019 MIT",
+             "url": f"{_BOOKS_URL}/%D8%A7%D9%84%D8%AA%D9%81%D9%83%D9%8A%D8%B1_%D8%A7%D9%84%D8%AD%D9%88%D8%B3%D8%A8%D9%8A.epub",
+             "sha256": "b6598e263eb618ac9a89cf1b8f5deaf1607a99926ee7039dabe7b0b8031c56a2"},
+            {"file": "theatre_digital_world.epub", "title": "المسرح والعالم الرقمي", "author": "أنطونيو بيتزو",
+             "rights": "Hindawi (design); translation text: د. أماني فوزي حبشي",
+             "url": f"{_BOOKS_URL}/%D8%A7%D9%84%D9%85%D8%B3%D8%B1%D8%AD_%D9%88%D8%A7%D9%84%D8%B9%D8%A7%D9%84%D9%85_%D8%A7%D9%84%D8%B1%D9%82%D9%85%D9%8A.epub",
+             "sha256": "31565f651e4d07cc97aacfb2c270164b5813f419fe21a0f600e8e86e35b05ba2"},
+            {"file": "data_science.epub", "title": "علم البيانات", "author": "جون دي كيليهر وبريندان تيرني",
+             "rights": "Hindawi (design, Arabic translation); original text © 2018 MIT",
+             "url": f"{_BOOKS_URL}/%D8%B9%D9%84%D9%85_%D8%A7%D9%84%D8%A8%D9%8A%D8%A7%D9%86%D8%A7%D8%AA.epub",
+             "sha256": "cdc651aeafef692740015bbcebd5f3fd6107a83b9090219f16b8931da76ddf88"},
+        ],
+    },
+]
+
 REJECTED = [
+    {"name": "المعجم الوسيط / معجم اللغة العربية المعاصرة (scanned PDFs)", "reason": "Image-only scans (no text "
+     "layer, would need OCR); dictionary entries rather than prose. Removed from the repository by the owner."},
     {"name": "Smith & Van Dyck Arabic Bible (1865)", "reason": "Public domain, but classical religious language; "
      "kept out by decision (possible secondary source later)."},
     {"name": "UD Arabic-PUD treebank", "reason": "README says sentences 'may be copyrighted in some jurisdictions' "
@@ -92,7 +134,7 @@ REJECTED = [
 
 
 def get_source(name):
-    for source in SOURCES:
+    for source in SOURCES + PRIVATE_SOURCES:
         if source["name"] == name:
             return source
     raise KeyError(name)

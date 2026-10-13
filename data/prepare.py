@@ -27,14 +27,16 @@ import math
 import random
 import re
 import zipfile
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from data.clean import clean_text, dedup_lines
-from data.download import RAW_DIR, sha256_file, source_path
-from data.sources import REJECTED, SOURCES
+from data.download import PRIVATE_DIR, RAW_DIR, sha256_file, source_path
+from data.extract_repo import html_to_text
+from data.sources import PRIVATE_SOURCES, REJECTED, SOURCES
 from data.stats import text_stats
 from tokenizer.char_tokenizer import CharTokenizer
 
@@ -46,6 +48,7 @@ SPLITS = ("train", "val", "test")
 @dataclass
 class PrepareConfig:
     out_dir: str = "data/processed/hishamlm_v1"
+    include_private: bool = False  # add data.sources.PRIVATE_SOURCES (never redistribute the result)
     domain_dir: str = "data/processed/domain_after_sales/docs"
     eval_questions: str = "data/processed/eval_after_sales_questions/questions.jsonl"
     seed: int = 42
@@ -105,9 +108,51 @@ def unwrap_paragraphs(text):
     return "\n\n".join(" ".join(p.split()) for p in paragraphs if p.strip())
 
 
+_EPUB_FRONT_MATTER = re.compile(r"(cover|fp\d+|copyright|toc|nav|titlepage)\.x?html$", re.IGNORECASE)
+
+
+def read_epub(path, title, max_latin_share=0.4):
+    """Book text in reading (spine) order, without front matter and reference/index sections.
+
+    Skipped: cover, title pages, copyright page, table of contents, and any section whose letters
+    are mostly Latin (notes, references, bibliographies, bilingual indexes). The book title,
+    repeated as a header at the top of every chapter, is removed.
+    """
+    with zipfile.ZipFile(path) as zf:
+        container = ET.fromstring(zf.read("META-INF/container.xml"))
+        opf_path = next(el.get("full-path") for el in container.iter() if el.tag.endswith("rootfile"))
+        opf = ET.fromstring(zf.read(opf_path))
+        base = opf_path.rsplit("/", 1)[0] + "/" if "/" in opf_path else ""
+        manifest = {el.get("id"): el.get("href") for el in opf.iter() if el.tag.endswith("}item")}
+        spine = [manifest[el.get("idref")] for el in opf.iter() if el.tag.endswith("}itemref")]
+        sections, skipped = [], []
+        for href in spine:
+            if _EPUB_FRONT_MATTER.search(href):
+                skipped.append(href)
+                continue
+            # inside HTML a raw line break is just a space; paragraphs come from the block tags
+            text = html_to_text(re.sub(r"\s*\n\s*", " ", zf.read(base + href).decode("utf-8")))
+            letters = [c for c in text if c.isalpha()]
+            if letters and sum(c.isascii() for c in letters) / len(letters) >= max_latin_share:
+                skipped.append(href)
+                continue
+            lines = [l for l in text.split("\n") if l.strip()]
+            if lines and " ".join(lines[0].split()) == title:
+                lines = lines[1:]
+            sections.append("\n".join(lines))
+    return "\n\n".join(sections), skipped
+
+
 def read_source(source, seed):
     path = source_path(source)
     name = source["name"]
+    if name == "hindawi_books_ar":
+        docs, raw_chars = [], 0
+        for entry in source["files"]:
+            text, _ = read_epub(path / entry["file"], entry["title"])
+            docs.append((entry["title"], text))
+            raw_chars += len(text)
+        return docs, raw_chars
     if name.startswith("common_voice"):
         raw = path.read_text(encoding="utf-8")
         lines = [l.strip() for l in raw.split("\n") if l.strip()]
@@ -243,11 +288,15 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
     docs = {}  # source -> [(doc_id, text)]
     for source in sources:
         path = source_path(source)
-        if verify_hashes and source.get("sha256") and sha256_file(path) != source["sha256"]:
-            raise ValueError(f"{path} does not match its pinned sha256; run python -m data.download")
+        files = [(path / f["file"], f["sha256"]) for f in source["files"]] if "files" in source else [(path, source.get("sha256"))]
+        for file, expected in files:
+            if verify_hashes and expected and sha256_file(file) != expected:
+                raise ValueError(f"{file} does not match its pinned sha256; run python -m data.download")
         raw_docs, raw_chars = read_source(source, cfg.seed)
         docs[source["name"]] = [(d, clean_text(t)) for d, t in raw_docs]
-        report[source["name"]] = {"language": source["language"], "file_bytes": path.stat().st_size,
+        report[source["name"]] = {"language": source["language"], "eval_group": source.get("eval_group", "general"),
+                                  "private": bool(source.get("private")),
+                                  "file_bytes": sum(f.stat().st_size for f, _ in files),
                                   "chars_extracted": raw_chars,
                                   "chars_after_cleaning": sum(len(t) for _, t in docs[source["name"]])}
     domain_docs, domain_raw = read_domain(ROOT / cfg.domain_dir)
@@ -306,13 +355,19 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
     tokenizer.save(out_dir / "vocab.json")
 
     # ---- 5. metrics ----
-    general = [s["name"] for s in sources]
+    names = [s["name"] for s in sources]
+    general = [s["name"] for s in sources if s.get("eval_group", "general") == "general"]
     groups = {  # evaluation sets A and B
         "A_general_val": "\n\n".join(split_texts["val"][n] for n in general),
         "A_general_test": "\n\n".join(split_texts["test"][n] for n in general),
         "B_domain_val": split_texts["val"][DOMAIN],
         "B_domain_test": split_texts["test"][DOMAIN],
     }
+    # sources with their own eval_group (e.g. private books) get separate sets, so A keeps its v1 meaning
+    for group in sorted({s["eval_group"] for s in sources if s.get("eval_group", "general") != "general"}):
+        members = [s["name"] for s in sources if s.get("eval_group") == group]
+        for split in ("val", "test"):
+            groups[f"A_{group}_{split}"] = "\n\n".join(split_texts[split][n] for n in members)
     questions_path = ROOT / cfg.eval_questions
     questions = [json.loads(l)["question"] for l in questions_path.read_text(encoding="utf-8").splitlines()] \
         if questions_path.exists() else []
@@ -322,16 +377,16 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
     train_lines = lines_of(train_text)
     held_out_lines = set().union(*(lines_of(split_texts[s][n]) for s in ("val", "test") for n in split_texts[s]))
 
-    for name in general + [DOMAIN]:
+    for name in names + [DOMAIN]:
         r = report[name]
         stats = text_stats("\n".join(t for _, t in docs[name]))
         r.update({f"{split}_chars": len(split_texts[split][name]) for split in SPLITS})
         r["arabic_pct"], r["latin_pct"] = round(stats["arabic_pct"], 2), round(stats["latin_pct"], 2)
         r["unk_rate"] = {split: round(unk_rate(split_texts[split][name], tokenizer), 6) for split in SPLITS}
 
-    train_chars = {n: len(split_texts["train"][n]) for n in general + [DOMAIN]}
-    general_train = sum(train_chars[n] for n in general)
-    weights = {n: (1 - cfg.domain_share) * train_chars[n] / general_train for n in general}
+    train_chars = {n: len(split_texts["train"][n]) for n in names + [DOMAIN]}
+    general_train = sum(train_chars[n] for n in names)
+    weights = {n: (1 - cfg.domain_share) * train_chars[n] / general_train for n in names}
     weights[DOMAIN] = cfg.domain_share
     # Alternative mix: the general share split equally between Arabic and English,
     # then by size within each language.
@@ -350,8 +405,10 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "config": asdict(cfg),
         "sources": report,
-        "provenance": json.loads((RAW_DIR / "provenance.json").read_text(encoding="utf-8"))
-        if (RAW_DIR / "provenance.json").exists() else {},
+        "provenance": {k: v for folder in ((RAW_DIR,) + ((PRIVATE_DIR,) if cfg.include_private else ()))
+                       if (folder / "provenance.json").exists()
+                       for k, v in json.loads((folder / "provenance.json").read_text(encoding="utf-8")).items()
+                       if not k.split("/")[0] in {s["name"] for s in PRIVATE_SOURCES} or cfg.include_private},
         "licenses": {s["name"]: {k: s[k] for k in ("license", "license_url", "license_note", "repository", "description")}
                      for s in sources},
         "domain_metadata": "data/processed/domain_after_sales/metadata.json",
@@ -387,6 +444,9 @@ def prepare(cfg, sources=SOURCES, verify_hashes=True):
             "shared_50char_windows": {
                 "A_general": round(shared_window_rate(groups["A_general_val"] + groups["A_general_test"],
                                                       "\n".join(split_texts["train"][n] for n in general)), 4),
+                **{g[: -len("_val")]: round(shared_window_rate(groups[g] + groups[g[: -len("_val")] + "_test"],
+                                                               "\n".join(split_texts["train"][n] for n in names)), 4)
+                   for g in groups if g.endswith("_val") and g not in ("A_general_val", "B_domain_val")},
                 "B_domain": round(shared_window_rate(groups["B_domain_val"] + groups["B_domain_test"],
                                                      split_texts["train"][DOMAIN]), 4),
             },
@@ -419,8 +479,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", default=PrepareConfig.out_dir)
     parser.add_argument("--seed", type=int, default=PrepareConfig.seed)
+    parser.add_argument("--include-private", action="store_true",
+                        help="also use data.sources.PRIVATE_SOURCES (personal use only, never redistribute)")
     args = parser.parse_args()
-    meta = prepare(PrepareConfig(out_dir=args.out_dir, seed=args.seed))
+    if args.include_private and args.out_dir == PrepareConfig.out_dir:
+        parser.error("--include-private needs its own --out-dir (the default is the public v1 dataset)")
+    cfg = PrepareConfig(out_dir=args.out_dir, seed=args.seed, include_private=args.include_private)
+    meta = prepare(cfg, SOURCES + PRIVATE_SOURCES if args.include_private else SOURCES)
     print_report(meta)
 
 
