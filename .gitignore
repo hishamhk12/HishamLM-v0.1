@@ -5,3 +5,4 @@ checkpoints/*
 !checkpoints/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/wikipedia_ar/raw/arwiki-latest-pages-articles-multistream.xml.bz2
