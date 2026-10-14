@@ -7,3 +7,4 @@ data/processed/*
 !data/processed/.gitkeep
 data/raw/general/
 data/raw/private_books/
+data/wikipedia_ar/raw/
