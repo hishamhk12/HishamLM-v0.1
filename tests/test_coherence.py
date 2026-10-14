@@ -45,3 +45,15 @@ class TestContextCoverage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVocabDrift(unittest.TestCase):
+    def test_distinctive_words_and_rate(self):
+        from collections import Counter
+
+        from inference.vocab_drift import distinctive, rate
+
+        target = Counter({"بيانات": 50, "كتاب": 50})
+        background = Counter({"كتاب": 500, "بيت": 500})
+        self.assertEqual(distinctive(target, background, min_count=30, ratio=8, top=10), ["بيانات"])
+        self.assertAlmostEqual(rate("البيانات كثيرة في الكتاب", {"بيانات"}), 100 / 3)
