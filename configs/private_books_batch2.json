@@ -1,0 +1,14 @@
+{
+  "_note": "Topic and register per book: from the EPUB metadata (title, author, subject, description) and the first chapters. Not from a model.",
+  "Bedayat_01.epub": {"id": "bedayat_al_mujtahid_01", "topic": "تراث", "tags": ["تراث", "فقه"], "register": "classical (+ modern editor's footnotes)", "basis": "subject: الفقه المالكي; author: ابن رشد الحفيد"},
+  "Bedayat_02.epub": {"id": "bedayat_al_mujtahid_02", "topic": "تراث", "tags": ["تراث", "فقه"], "register": "classical (+ modern editor's footnotes)", "basis": "subject: الفقه المالكي; author: ابن رشد الحفيد"},
+  "Crime and Punishment P02.epub": {"id": "crime_and_punishment_02", "topic": "رواية", "tags": ["رواية", "أدب مترجم"], "register": "modern (translation)", "basis": "front page: الكتاب: الجريمة والعقاب (2) (رواية)"},
+  "adab.epub": {"id": "adab_ocr", "topic": "غير ذلك", "tags": ["غير معروف"], "register": "unknown", "basis": "no metadata; OCR text is unreadable Latin noise"},
+  "البيان_والتبيين.epub": {"id": "al_bayan_wal_tabyin", "topic": "تراث", "tags": ["تراث", "أدب", "لغة"], "register": "classical", "basis": "author: الجاحظ"},
+  "الخيميائي.epub": {"id": "the_alchemist", "topic": "رواية", "tags": ["رواية", "أدب مترجم"], "register": "modern (translation)", "basis": "pages 1-3: ترجمة جواد صيداوي، شركة المطبوعات"},
+  "العقد_الفريد.epub": {"id": "al_iqd_al_farid", "topic": "تراث", "tags": ["تراث", "أدب"], "register": "classical", "basis": "author: ابن عبد ربه"},
+  "النظرات_البخيل.epub": {"id": "nazarat_al_bakhil", "topic": "مقالات", "tags": ["مقالات", "أدب"], "register": "early modern (1910s)", "basis": "author: المنفلوطي، النظرات"},
+  "دماغك تحت تأثير الإباحية.epub": {"id": "your_brain_on_porn", "topic": "علم", "tags": ["علم", "اجتماع"], "register": "modern (translation)", "basis": "pages 0-5: أضرار المرئيات الجنسية على الإنترنت في ضوء علم ...; publisher page: كمون ويلث"},
+  "كليلة_ودمنة.epub": {"id": "kalila_wa_dimna", "topic": "تراث", "tags": ["تراث", "أدب", "فكر"], "register": "classical", "basis": "author: ابن المقفع"},
+  "مجلة_الرسالة.epub": {"id": "majallat_al_risala", "topic": "مقالات", "tags": ["مقالات"], "register": "modern (1933-1953)", "basis": "title: مجلة الرسالة (issue index pages only)"}
+}
