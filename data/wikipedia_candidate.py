@@ -41,28 +41,58 @@ DATE_TITLE = re.compile(r"^\d{1,2} (يناير|فبراير|مارس|أبريل|
 DISAMBIG_TEMPLATES = {"توضيح", "صفحة توضيح", "disambiguation", "disambig", "توضيح جغرافي", "توضيح أسماء"}
 
 # topic from the article's own categories (keyword in a category name -> topic); first match wins
-TOPICS = [
-    ("سيرة", ("مواليد", "وفيات", "أشخاص", "لاعبو", "لاعبات", "ممثلو", "ممثلات", "سياسيون", "كتاب ", "شعراء", "مغنو")),
-    ("طب", ("طب", "أمراض", "أدوية", "تشريح", "صحة", "علاج", "أعراض", "جراحة")),
-    ("تقنية", ("حوسبة", "برمجيات", "حاسوب", "إنترنت", "تقنية", "تكنولوجيا", "هواتف", "ألعاب فيديو", "إلكترونيات", "شبكات")),
-    ("اقتصاد", ("اقتصاد", "شركات", "بنوك", "تجارة", "صناعة", "مالية", "أسواق", "عملات")),
-    ("أدب", ("أدب", "روايات", "قصص", "شعر", "كتب ", "مسرحيات")),
-    ("علم", ("علم", "علوم", "فيزياء", "كيمياء", "رياضيات", "فلك", "أحياء", "حيوانات", "نباتات", "أنواع", "حشرات",
-             "طيور", "أسماك", "معادن", "جيولوجيا", "كويكبات", "نجوم", "مجرات")),
-    ("تاريخ", ("تاريخ", "حروب", "معارك", "سلالات", "إمبراطوريات", "عقد ", "القرن", "ممالك", "ثورات")),
-    ("جغرافيا", ("مدن", "قرى", "بلديات", "مقاطعات", "بلدات", "جغرافيا", "أنهار", "جبال", "جزر", "بحيرات", "تجمعات سكانية",
-                 "مناطق", "محافظات", "أحياء ")),
-    ("ثقافة", ("أفلام", "مسلسلات", "موسيقى", "ألبومات", "أغاني", "فن", "رياضة", "كرة", "أندية", "دين", "مساجد",
-               "كنائس", "ثقافة", "تلفزيون", "مهرجانات", "بطولات", "فرق")),
+TOPICS = [  # whole category words; the first topic (in this order) with a matching word gets the vote
+    ("سيرة", ("أشخاص", "لاعبو", "لاعبات", "ممثلو", "ممثلات", "سياسيون", "كتاب", "شعراء", "مغنو", "مغنيات", "رجال",
+              "نساء", "علماء", "فنانون", "رياضيون", "عداؤو", "مخرجو", "ملوك", "أمراء")),
+    ("طب", ("طب", "أمراض", "أدوية", "تشريح", "صحة", "علاج", "أعراض", "جراحة", "مستشفيات", "طبية", "متلازمات")),
+    ("تقنية", ("حوسبة", "برمجيات", "برمجة", "حاسوب", "حواسيب", "إنترنت", "تقنية", "تقنيات", "تكنولوجيا", "هواتف",
+               "إلكترونيات", "شبكات", "ذكاء", "خوارزميات", "تشفير", "أقمار", "برامج", "فيديو", "روبوتات")),
+    ("اقتصاد", ("اقتصاد", "شركات", "بنوك", "مصارف", "تجارة", "صناعة", "مالية", "أسواق", "عملات", "اقتصادية")),
+    ("أدب", ("أدب", "روايات", "قصص", "شعر", "كتب", "مسرحيات", "أدبية", "دواوين")),
+    ("علم", ("علم", "علوم", "فيزياء", "كيمياء", "رياضيات", "فلك", "حيوانات", "نباتات", "أنواع", "حشرات", "طيور",
+             "أسماك", "معادن", "جيولوجيا", "كويكبات", "نجوم", "مجرات", "نظريات", "ثدييات", "زواحف", "فطريات")),
+    ("تاريخ", ("تاريخ", "حروب", "معارك", "سلالات", "إمبراطوريات", "عقد", "ممالك", "ثورات", "تاريخية", "عصور")),
+    ("جغرافيا", ("مدن", "قرى", "بلديات", "مقاطعات", "بلدات", "جغرافيا", "أنهار", "جبال", "جزر", "بحيرات", "تجمعات",
+                 "مناطق", "محافظات", "محميات", "متنزهات", "مطارات", "سدود", "وديان")),
+    ("ثقافة", ("أفلام", "مسلسلات", "موسيقى", "ألبومات", "أغاني", "فن", "فنون", "رياضة", "كرة", "أندية", "دين",
+               "أديان", "مساجد", "كنائس", "ثقافة", "تلفزيون", "مهرجانات", "بطولات", "فرق", "متاحف", "لغات")),
 ]
 
 
+ATTRIBUTION = f"""# Attribution: Arabic Wikipedia text
+
+Text from Arabic Wikipedia (https://ar.wikipedia.org), dump of {DUMP_DATE}, chunks
+arwiki-{DUMP_DATE}-p1007094p1086069, -p10050949p10299360, -p10299362p10477899 (full-history XML;
+the latest revision of each article is used). Every article in articles.jsonl keeps its title, page id,
+revision id, revision timestamp, source chunk and URL.
+
+License: Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/
+(Wikipedia text is also available under the GFDL.)
+
+What this requires for any dataset that includes this text:
+- Attribution: credit "Wikipedia contributors" and link each article (URL or page id + history URL);
+  a list of article titles / URLs shipped with the dataset is the usual way.
+- Indicate changes: the text was converted from MediaWiki markup to plain text (templates, tables,
+  references, images, categories and link-only sections removed); it was not rephrased.
+- ShareAlike: a redistributed dataset containing this text must be under CC BY-SA 4.0 (or compatible).
+- Keep this file and the license link with the data.
+- Note: the dataset that would combine this text with the private Hindawi books cannot be published
+  as a whole, because the books may not be redistributed.
+"""
+
+
 def topic_of(categories):
-    for cat in categories:
+    """Majority vote over the article's categories; keywords must match whole words (with or without "ال")."""
+    words = [set(w.removeprefix("ال") for w in re.findall(r"[\u0621-\u064A]+", c)) for c in categories]
+    if any(ws & {"مواليد", "وفيات"} for ws in words):
+        return "سيرة"
+    votes = Counter()
+    for ws in words:
         for topic, keys in TOPICS:
-            if any(k in cat for k in keys):
-                return topic
-    return "عام / غير مصنف"
+            if any(k.strip().removeprefix("ال") in ws for k in keys):
+                votes[topic] += 1
+                break
+    return votes.most_common(1)[0][0] if votes else "عام / غير مصنف"
 
 
 def norm_para(p):
@@ -220,6 +250,9 @@ def main():
     skeletons = Counter(skeleton(a) for a in articles)
     for a in articles:
         a["templated_intro"] = skeletons[skeleton(a)] >= 20
+        paras = [p for p in a["text"].split("\n") if p.strip()]
+        a["list_like"] = a["title"].startswith(("وفيات ", "تكريمات ", "مواليد ")) or (
+            len(paras) >= 15 and statistics.mean(len(p.split()) for p in paras) < 10)
 
     # ---- eligibility ----
     def reason(i, a):
@@ -229,6 +262,8 @@ def main():
             return "list"
         if a["is_year_or_date"]:
             return "year / date"
+        if a["list_like"]:
+            return "list-like (lines of names / short entries)"
         if a["chars"] < 400:
             return "very short (< 400 clean chars)"
         if a["arabic_share"] < 0.8:
@@ -331,10 +366,11 @@ def main():
             if total >= budget:
                 break
             chosen.append(a)
-            total += a["arabic_chars"]
+            total += a["chars"]  # budget in clean characters
         chars = [a["chars"] for a in chosen]
         options[name] = {
-            "arabic_chars_target": budget, "articles": len(chosen), "chars": sum(chars), "arabic_chars": total,
+            "chars_target": budget, "articles": len(chosen), "chars": total,
+            "arabic_letters": sum(a["arabic_chars"] for a in chosen),
             "pool_exhausted": total < budget,
             "mean_chars": round(statistics.mean(chars)), "median_chars": statistics.median(chars),
             "arabic_share_of_letters": round(sum(a["arabic_share"] * a["chars"] for a in chosen) / sum(chars), 4),
@@ -355,6 +391,8 @@ def main():
                 "url": "https://ar.wikipedia.org/wiki/" + a["title"].replace(" ", "_"),
                 "history_url": f"https://ar.wikipedia.org/w/index.php?curid={a['id']}&action=history",
                 "topic": a["topic"], "chars": a["chars"], "text": a["text"]}, ensure_ascii=False) + "\n")
+
+    (OUT / "ATTRIBUTION.md").write_text(ATTRIBUTION, encoding="utf-8")
 
     # ---- statistics ----
     arts = articles
@@ -377,7 +415,7 @@ def main():
         "largest": [(a["title"], a["chars"]) for a in by_size[-5:][::-1]],
         "smallest": [(a["title"], a["chars"]) for a in by_size[:5]],
         "very_short_under_400": sum(n < 400 for n in lens),
-        "lists": sum(a["is_list"] for a in arts), "disambiguation": sum(a["is_disambiguation"] for a in arts),
+        "lists": sum(a["is_list"] for a in arts), "list_like": sum(a["list_like"] for a in arts), "disambiguation": sum(a["is_disambiguation"] for a in arts),
         "years_dates": sum(a["is_year_or_date"] for a in arts),
         "template_or_table_heavy_over_60pct": sum(a["template_table_share"] > 0.6 for a in arts),
         "articles_with_tables": sum(a["tables"] > 0 for a in arts),
