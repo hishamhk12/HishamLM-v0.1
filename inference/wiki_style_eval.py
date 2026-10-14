@@ -144,7 +144,9 @@ def main():
               "lists": {k: sorted(v) for k, v in lists.items()}, "markers": MARKERS, "patterns": PATTERNS, "results": {}}
     for spec in args.samples:
         label, texts = load(spec)
-        report["results"][label] = measures(texts, lexicon, names, lists, train_text, openings, attribution)
+        # coherence.json already holds memorization (inference.coherence, same training text): not repeated here
+        memo_text = None if "#" in spec else train_text
+        report["results"][label] = measures(texts, lexicon, names, lists, memo_text, openings, attribution)
         print(label, {k: v for k, v in report["results"][label].items() if k != "matches_over_40"}, flush=True)
 
     # references: real held-out text cut to 400-character pieces
