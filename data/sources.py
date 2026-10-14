@@ -113,6 +113,30 @@ PRIVATE_SOURCES = [
     },
 ]
 
+# Batch 2 (commit 06a24b0): only the books approved after data.books_candidate (clean text, clear license).
+# The cleaned text comes from data/processed/private_books_v2_candidate/books/<name>.txt; data.add_books
+# adds them to a copy of dataset v2. "weight": "match:<source>" gives the book the same exposure per
+# character as that source; a number is a fixed sampling weight. held_out=False: too small to split.
+_BATCH2_COMMIT = "06a24b06e9529d0e2a7186611c93bc9143f25f0c"
+_BATCH2_URL = f"https://media.githubusercontent.com/media/hishamhk12/HishamLM-v0.1/{_BATCH2_COMMIT}/data/private_books/raw/ar"
+_WIKISOURCE = {"license": "CC-BY-SA-3.0 / GFDL (Wikisource export; the original work is in the public domain)",
+               "license_url": "https://creativecommons.org/licenses/by-sa/3.0/", "private": False}
+
+BOOKS_BATCH2 = [
+    {"name": "kalila_wa_dimna", "language": "ar", "eval_group": "books_new_kalila", "weight": "match:hindawi_books_ar",
+     "held_out": True, "title": "كليلة ودمنة", "author": "ابن المقفع", "file": "كليلة_ودمنة.epub",
+     "url": f"{_BATCH2_URL}/%D9%83%D9%84%D9%8A%D9%84%D8%A9_%D9%88%D8%AF%D9%85%D9%86%D8%A9.epub",
+     "sha256": "2197f50f483a01346ad438ee8c09fc5bee9b5fe53dc299bf9e8e4d2d72aea475", **_WIKISOURCE},
+    {"name": "nazarat_al_bakhil", "language": "ar", "eval_group": "books_new_nazarat", "weight": "match:hindawi_books_ar",
+     "held_out": False, "title": "النظرات: البخيل", "author": "مصطفى لطفي المنفلوطي", "file": "النظرات_البخيل.epub",
+     "url": f"{_BATCH2_URL}/%D8%A7%D9%84%D9%86%D8%B8%D8%B1%D8%A7%D8%AA_%D8%A7%D9%84%D8%A8%D8%AE%D9%8A%D9%84.epub",
+     "sha256": "d31a96aa5d7f1ab13ca0fb561d030eb0fcbc7ce617f8223d424ade3dc77e3ef3", **_WIKISOURCE},
+    {"name": "al_bayan_wal_tabyin", "language": "ar", "eval_group": "books_new_bayan", "weight": 0.01,
+     "held_out": True, "title": "البيان والتبيين", "author": "الجاحظ", "file": "البيان_والتبيين.epub",
+     "url": f"{_BATCH2_URL}/%D8%A7%D9%84%D8%A8%D9%8A%D8%A7%D9%86_%D9%88%D8%A7%D9%84%D8%AA%D8%A8%D9%8A%D9%8A%D9%86.epub",
+     "sha256": "957e24256045b6f8821d336705435948e302c1203da2256bcb760fb9ddd80fc6", **_WIKISOURCE},
+]
+
 REJECTED = [
     {"name": "المعجم الوسيط / معجم اللغة العربية المعاصرة (scanned PDFs)", "reason": "Image-only scans (no text "
      "layer, would need OCR); dictionary entries rather than prose. Removed from the repository by the owner."},
@@ -128,13 +152,19 @@ REJECTED = [
     {"name": "Gutenberg KJV / Milton / Shakespeare / Blake / Whitman", "reason": "Public domain but archaic or verse; "
      "not representative of modern English."},
     {"name": "NTREX English source side (WMT19 news)", "reason": "Original news articles; license of the source text unclear."},
+    {"name": "Batch 2: بداية المجتهد 1 و 2، الخيميائي، دماغك تحت تأثير الإباحية", "reason": "Internet Archive OCR with "
+     "heavy noise (grade C in data.books_candidate); the two translations also have unclear rights."},
+    {"name": "Batch 2: adab.epub", "reason": "OCR output is random Latin text (Internet Archive estimates 0.4-5% accuracy)."},
+    {"name": "Batch 2: العقد الفريد، مجلة الرسالة (Wikisource)", "reason": "The exports contain only index pages, no text."},
+    {"name": "Batch 2: الجريمة والعقاب (2)، ترجمة سامي الدروبي", "reason": "Clean text, but the rights to the Arabic "
+     "translation are not confirmed yet; postponed by the project owner."},
     {"name": "Wikipedia dumps, Hindawi, OpenITI, Tatoeba, OPUS, FLORES, TyDi QA", "reason": "Blocked from this "
      "environment's network, or non-commercial license (OpenITI: CC BY-NC-SA)."},
 ]
 
 
 def get_source(name):
-    for source in SOURCES + PRIVATE_SOURCES:
+    for source in SOURCES + PRIVATE_SOURCES + BOOKS_BATCH2:
         if source["name"] == name:
             return source
     raise KeyError(name)

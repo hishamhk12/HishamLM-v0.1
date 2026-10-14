@@ -113,7 +113,9 @@ def prepared_data(dataset_dir, sampling="weights", tokenizer_path=None, domain_s
         for lang, names in sorted(by_language.items()):
             evals[f"A_{lang}_{split}"] = encode("\n\n".join(read(split, n) for n in names))
         for group in other_groups:
-            evals[f"A_{group}_{split}"] = encode("\n\n".join(read(split, n) for n, g in group_of.items() if g == group))
+            text = "\n\n".join(t for n, g in group_of.items() if g == group and (t := read(split, n)))
+            if text:  # a source kept whole in train (too small to hold out) has no evaluation set
+                evals[f"A_{group}_{split}"] = encode(text)
     # Checkpoints are chosen on a validation loss mixed like the training data.
     val_weights = {"A_general_val": 1 - weights[DOMAIN], "B_domain_val": weights[DOMAIN]}
     info = {"dataset": str(dataset_dir), "fingerprint": meta["dataset_fingerprint"], "sampling": sampling,
