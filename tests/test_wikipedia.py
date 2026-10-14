@@ -78,5 +78,19 @@ class TestMediaWikiToText(unittest.TestCase):
         self.assertEqual(stats["table_count"], 1)
 
 
+
+class TestWikiStyle(unittest.TestCase):
+    def test_markers_and_patterns(self):
+        import re
+
+        from inference.wiki_style_eval import PATTERNS, arabic_words, marker_rate
+
+        text = "خربة الفرس هي قرية تقع في محافظة طرطوس، ويُعد نهرها من أجمل الأنهار. وُلد فيها شاعر (مواليد 1950)."
+        ws = arabic_words(text)
+        self.assertAlmostEqual(marker_rate(ws), 100 * 4 / len(ws))  # هي، تقع، ويُعد، وُلد
+        hits = sum(len(re.findall(p, text.replace("ُ", ""))) for p in PATTERNS.values())
+        self.assertEqual(hits, 4)  # (مواليد، هي قرية، تقع في، ولد في
+
+
 if __name__ == "__main__":
     unittest.main()
