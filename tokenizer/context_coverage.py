@@ -24,7 +24,7 @@ GROUPS = {
     "after_sales": ["after_sales"],
     "books": ["hindawi_books_ar"],
 }
-WORD = re.compile(r"[^\W\d_]+")  # letters only (Arabic or Latin)
+WORD = re.compile("[^\\W\\d_](?:[^\\W\\d_]|[\u064B-\u0652\u0670\u0640])*")  # letters (Arabic or Latin) with their diacritics
 SENTENCE_END = re.compile(r"[.!?؟]+(?=\s|$)|\n+")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?؟])\s+|\n+")
 

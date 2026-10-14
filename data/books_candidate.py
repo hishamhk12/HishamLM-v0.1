@@ -37,7 +37,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from data.clean import clean_text
-from data.extract_repo import html_to_text, looks_reversed
+from data.extract_repo import html_to_text
 from data.sources import PRIVATE_SOURCES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,8 +55,9 @@ PERSIAN_DIGIT = re.compile(r"[۰-۹]")
 OCR_LETTERS = {"ک": "ك", "ڪ": "ك", "ی": "ي", "ھ": "ه", **{chr(0x06F0 + i): chr(0x0660 + i) for i in range(10)}}
 OCR_OTHER = re.compile(r"[گپچژٹڈڑںہےۀۃ]")  # Persian/Urdu letters with no Arabic counterpart
 MARKS = re.compile(r"[ً-ْٰـ]")
-AR_WORD = re.compile(r"[ء-يٱ]+")
-WORD = re.compile(r"[^\W\d_]+")
+# words keep their diacritics: Arabic marks (Unicode Mn) are not "word" characters for [^\W\d_]
+AR_WORD = re.compile("[\u0621-\u064A\u0671][\u0621-\u0652\u0670\u0671\u0640]*")
+WORD = re.compile("[^\\W\\d_](?:[^\\W\\d_]|[\u064B-\u0652\u0670\u0640])*")
 SENTENCE_END = re.compile(r"[.!?؟]+(?=\s|$)")
 
 # ---------------------------------------------------------------------------
@@ -163,6 +164,15 @@ class Lexicon:
         return any(word.endswith(s) and len(word) - len(s) >= 2 and word[: -len(s)] in self.words for s in SUFFIXES)
 
 
+def reversed_line(line):
+    """Arabic written in reverse character order: many words start with ة/ى or end in the reversed article "لا"."""
+    words = [w for w in (strip_marks(w) for w in AR_WORD.findall(line)) if w]  # a lone tatweel strips to ""
+    if len(words) < 5:
+        return False
+    marks = sum(w[0] in "ةى" or (len(w) > 3 and w.endswith("لا")) for w in words)
+    return marks / len(words) >= 0.3
+
+
 def quality(text, lexicon):
     letters = ARABIC_LETTER.findall(text)
     latin = LATIN_LETTER.findall(text)
@@ -190,7 +200,7 @@ def quality(text, lexicon):
         "unmatched_closing_guillemets_per_1000w": round(unmatched * per_1000, 2),
         "latin_noise_tokens_per_1000w": round(latin_noise * per_1000, 2),
         "sentence_ends_per_100w": round(100 * len(SENTENCE_END.findall(text)) / max(len(WORD.findall(text)), 1), 2),
-        "reversed_lines": sum(bool(looks_reversed(l)) for l in lines),
+        "reversed_lines": sum(reversed_line(l) for l in lines),
         "diacritics_per_100_letters": round(100 * len(DIACRITIC.findall(text)) / max(len(letters), 1), 2),
         "paragraphs": len(paragraphs),
         "avg_paragraph_words": round(statistics.mean(len(WORD.findall(p)) for p in paragraphs), 1) if paragraphs else 0,
@@ -203,7 +213,8 @@ def grade(book):
     q = book["quality"]
     if not q or q["chars"] < 5000:
         return "F: (almost) nothing usable"
-    confusions = sum(n for k, n in book["cleaning_counts"].items() if "->" in k)
+    # letter confusions only: Persian digits are how OCR writes Eastern Arabic digits, not an error
+    confusions = sum(n for k, n in book["cleaning_counts"].items() if "->" in k and not k[0].isdigit() and k[0] not in "۰۱۲۳۴۵۶۷۸۹")
     noise = (1000 * (confusions + q["other_persian_letters"]) / max(q["words"], 1) + q["hamza_as_comma_per_1000w"]
              + q["unmatched_closing_guillemets_per_1000w"] + q["latin_noise_tokens_per_1000w"])
     book["ocr_noise_per_1000w"] = round(noise, 1)
@@ -221,7 +232,7 @@ def is_listing(text):
     lines = [l for l in text.split("\n") if l.strip()]
     if not lines:
         return True
-    short = sum(len(l.split()) <= 8 and not SENTENCE_END.search(l) for l in lines)
+    short = sum(len(l.split()) <= 8 for l in lines)
     return short / len(lines) >= 0.8 and statistics.median(len(l.split()) for l in lines) <= 6
 
 
@@ -277,7 +288,7 @@ def extract_book(path, lexicon, min_known=0.55, min_ia_accuracy=60.0):
         if not text.strip():
             excluded.append({"section": href, "reason": "empty after removing page headers / numbers", "chars": 0})
             continue
-        if ENDNOTE_START.match(text):
+        if any(ENDNOTE_START.match(l) for l in text.split("\n")[:3]):  # may start with a "الحواشي" heading
             excluded.append({"section": href, "reason": "endnote (translator's note), detached from the text", "chars": len(text)})
             continue
         if is_listing(text):
@@ -388,6 +399,27 @@ def tokenizer_stats(tok, text, char_freq):
 # Main
 # ---------------------------------------------------------------------------
 
+def book_bpc(checkpoint, text, chunks=20, chunk_chars=10_000):
+    """Bits per character of the book under a trained checkpoint (evaluation only), on evenly spaced chunks."""
+    import torch
+
+    from inference.generate import load_checkpoint
+    from training.evaluate import stream_loss
+
+    model, tok, ckpt = load_checkpoint(checkpoint, "cpu")
+    T = ckpt["config"]["context_length"]
+    char_len = torch.tensor(tok.token_char_lengths(), dtype=torch.float)
+    starts = [round(i * max(len(text) - chunk_chars, 0) / max(chunks - 1, 1)) for i in range(chunks)]
+    total_bits, total_chars = 0.0, 0.0
+    for s in sorted(set(starts)):
+        ids = torch.tensor(tok.encode(text[s:s + chunk_chars]), dtype=torch.long)
+        loss, count, chars = stream_loss(model, ids, T, T // 2, char_len)
+        if count:
+            total_bits += loss * count / 0.6931471805599453
+            total_chars += chars
+    return round(total_bits / max(total_chars, 1), 4)
+
+
 def known_book_hashes():
     return {f["sha256"] for s in PRIVATE_SOURCES for f in s.get("files", [])}
 
@@ -401,7 +433,8 @@ def main():
     parser.add_argument("--tokenizer", default="data/processed/hishamlm_v1/tokenizers/bpe_4096.json")
     parser.add_argument("--extracted-out", default="data/processed/private_books_batch2_extracted")
     parser.add_argument("--out", default="data/processed/private_books_v2_candidate")
-    parser.add_argument("--ids", default="", help="optional JSON file mapping file name -> short book id")
+    parser.add_argument("--books-config", default="", help="JSON: file name -> {id, topic, tags, register, basis}")
+    parser.add_argument("--checkpoint", default="", help="optional: BPC of every kept book under this checkpoint")
     args = parser.parse_args()
 
     dataset = ROOT / args.dataset
@@ -417,14 +450,16 @@ def main():
     char_freq = Counter((dataset / "train" / "hindawi_books_ar.txt").read_text(encoding="utf-8")) + Counter(general_ar)
 
     known = known_book_hashes()
-    ids = json.loads(Path(args.ids).read_text(encoding="utf-8")) if args.ids else {}
+    config = json.loads(Path(args.books_config).read_text(encoding="utf-8")) if args.books_config else {}
     books = []
     for path in sorted(Path(args.raw).glob("*.epub")):
         if hashlib.sha256(path.read_bytes()).hexdigest() in known:
             print(f"skip (already in the corpus): {path.name}")
             continue
         book = extract_book(path, lexicon)
-        book["id"] = ids.get(path.name, re.sub(r"\W+", "_", path.stem).strip("_").lower())
+        info = config.get(path.name, {})
+        book["id"] = info.get("id", re.sub(r"\W+", "_", path.stem).strip("_").lower())
+        book["topic"] = {k: info[k] for k in ("topic", "tags", "register", "basis") if k in info}
         books.append(book)
         print(f"{book['id']:28s} {book['kind']:22s} sections {len(book['sections_used']):4d}/{book['sections_total']:4d} "
               f"extracted {len(book['extracted_text']):>9,} kept {len(book['text']):>9,}", flush=True)
@@ -453,6 +488,11 @@ def main():
             }
             book["tokenizer"] = tokenizer_stats(tok, text, char_freq)
 
+    if args.checkpoint:
+        for book in books:
+            if book["text"]:
+                book["bpc_official_model"] = book_bpc(ROOT / args.checkpoint, book["text"])
+
     # near duplicates across the whole batch
     near = near_duplicates([p for _, p in all_paragraphs])
     for book in books:
@@ -473,6 +513,8 @@ def main():
     ext_dir, out_dir = ROOT / args.extracted_out, ROOT / args.out
     ext_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "books").mkdir(parents=True, exist_ok=True)
+    for old in (out_dir / "books").glob("*.txt"):  # only this run's books stay in the candidate
+        old.unlink()
     report = {"raw_dir": args.raw, "dataset_reference": args.dataset, "tokenizer": args.tokenizer,
               "near_duplicate_pairs_total": len(near), "cross_book_exact_duplicate_paragraphs": cross_exact,
               "examples_near_duplicates": [(all_paragraphs[i][1][:120], all_paragraphs[j][1][:120], jac)
@@ -480,7 +522,11 @@ def main():
               "books": []}
     for book in books:
         (ext_dir / f"{book['id']}.txt").write_text(book["extracted_text"], encoding="utf-8")
-        if book["text"]:
+        book["in_candidate"] = book["grade"][0] in "AB"
+        book["rights_status"] = ("clear: " + " / ".join(book["metadata"]["rights"]) + " (Wikisource; the original work is in the public domain)"
+                                 if book["kind"] == "wikisource" and book["metadata"].get("rights") else
+                                 "unclear: not covered by the stated Hindawi permission; needs the owner's confirmation before merging")
+        if book["in_candidate"]:
             (out_dir / "books" / f"{book['id']}.txt").write_text(book["text"], encoding="utf-8")
         report["books"].append({k: v for k, v in book.items() if k not in ("text", "extracted_text")})
     provenance = [{
@@ -488,6 +534,8 @@ def main():
         "kind": b["kind"], "rights_in_metadata": b["metadata"].get("rights", []),
         "publisher_in_metadata": b["metadata"].get("publisher", []), "sha256": b["sha256"],
         "extracted_chars": len(b["extracted_text"]), "kept_chars": len(b["text"]),
+        "topic": b.get("topic"), "extraction_grade": b.get("grade"), "in_candidate": b["in_candidate"],
+        "rights_status": b["rights_status"],
         "sections_used": b["sections_used"], "sections_excluded": b["sections_excluded"],
         "cleaning_actions": b["cleaning_counts"]} for b in books]
     (out_dir / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2), encoding="utf-8")
