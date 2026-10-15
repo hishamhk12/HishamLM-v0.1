@@ -87,6 +87,23 @@ def balanced_budgets(available, total, cap_share):
     return budgets
 
 
+def add_proportional_weights(out, weight):
+    """A second sampling option for the same files: Wikipedia's share is taken from every Arabic source in
+    proportion to its v2 weight (each one loses the same fraction); English and After-Sales are untouched."""
+    meta_path = ROOT / out / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    v2_w = meta["sampling"]["weights_language_balanced_v2"]
+    arabic = [n for n in v2_w if meta["sources"][n]["language"] == "ar"]
+    total = sum(v2_w[n] for n in arabic)
+    scale = (total - weight) / total
+    weights = {n: (w * scale if n in arabic else w) for n, w in v2_w.items()} | {NAME: weight}
+    meta["sampling"]["weights_language_balanced_proportional"] = {n: round(w, 6) for n, w in weights.items()}
+    meta["sampling"]["proportional_note"] = (f"Wikipedia {weight:.2%} taken from all Arabic sources {arabic} in proportion "
+                                             f"(each scaled by {scale:.4f}); English and After-Sales unchanged")
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")  # text files untouched
+    return weights
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="data/processed/hishamlm_v2")
@@ -96,7 +113,12 @@ def main():
     parser.add_argument("--weight", type=float, default=0.10)
     parser.add_argument("--cap-share", type=float, default=0.20)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--add-proportional-weights", action="store_true",
+                        help="only add the proportional sampling option to an existing --out dataset")
     args = parser.parse_args()
+    if args.add_proportional_weights:
+        print(add_proportional_weights(args.out, args.weight))
+        return
     base, out = ROOT / args.base, ROOT / args.out
     meta = json.loads((base / "meta.json").read_text(encoding="utf-8"))
 
