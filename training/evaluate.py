@@ -82,6 +82,10 @@ def evaluate_checkpoint(path, max_train_chars=200_000, stride=None, device="cpu"
     cfg = TrainConfig.from_dict(ckpt["config"])
     if dataset:
         cfg.dataset = dataset
+        # another dataset may not have the training run's sampling option; the evaluation sets do not depend on it
+        sampling = json.loads((ROOT / dataset / "meta.json").read_text(encoding="utf-8"))["sampling"]
+        if cfg.sampling not in sampling:
+            cfg.sampling = "weights_language_balanced"
     if context_length:
         if context_length > cfg.context_length:
             raise ValueError(f"the model was trained with context {cfg.context_length}, cannot score {context_length}")
