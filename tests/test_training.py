@@ -63,6 +63,14 @@ class TestTraining(unittest.TestCase):
         self.run_train(self.config("b", 6))
         self.assertSameWeights(self.weights("a"), self.weights("b"))
 
+    def test_snapshot_steps(self):
+        cfg = self.config("snap", 9)
+        cfg.snapshot_steps = [3, 9]
+        self.run_train(cfg)
+        run_dir = self.root / "ckpt" / "snap"
+        self.assertEqual(sorted(p.name for p in run_dir.glob("step_*.pt")), ["step_3.pt", "step_9.pt"])
+        self.assertEqual(torch.load(run_dir / "step_3.pt")["step"], 3)
+
     def test_resume_matches_uninterrupted_run(self):
         self.run_train(self.config("straight", 8))
         self.run_train(self.config("resumed", 4))

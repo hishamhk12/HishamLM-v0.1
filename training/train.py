@@ -306,6 +306,8 @@ def train(cfg, resume=False):
             else:
                 bad_evals += 1
             save_checkpoint(latest_path, row)
+            if step in cfg.snapshot_steps:
+                save_checkpoint(out_dir / f"step_{step}.pt", row)
             print(describe(row) + marker, flush=True)
             if cfg.early_stopping_patience and bad_evals >= cfg.early_stopping_patience:
                 print(f"early stopping: no val improvement for {bad_evals} evaluations (best at step {best_step})")

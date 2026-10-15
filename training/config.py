@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -45,6 +45,7 @@ class TrainConfig:
     # evaluation / logging
     eval_interval: int = 200
     eval_batches: int = 20
+    snapshot_steps: list = field(default_factory=list)  # also keep a copy of the checkpoint at these steps
 
     @classmethod
     def from_dict(cls, d):
