@@ -1,0 +1,33 @@
+{
+  "run_name": "transformer_bpe4k_7.4m_tied_v2wiki20m_prop_20k_cap",
+  "model_type": "transformer",
+  "dataset": "data/processed/hishamlm_v2_wiki20m",
+  "sampling": "weights_language_balanced_proportional",
+  "checkpoint_dir": "checkpoints",
+  "seed": 42,
+  "device": "auto",
+  "context_length": 64,
+  "embedding_dim": 256,
+  "n_heads": 8,
+  "n_layers": 8,
+  "dropout": 0.1,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "lr_schedule": "cosine",
+  "warmup_steps": 200,
+  "min_lr": 0.0001,
+  "max_steps": 20000,
+  "grad_clip": 1.0,
+  "early_stopping_patience": 0,
+  "eval_interval": 250,
+  "eval_batches": 20,
+  "lr_decay_steps": 6000,
+  "tokenizer": "data/processed/hishamlm_v1/tokenizers/bpe_4096.json",
+  "tie_weights": true,
+  "snapshot_steps": [
+    5000,
+    10000,
+    15000,
+    20000
+  ]
+}
