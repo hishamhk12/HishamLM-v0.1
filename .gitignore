@@ -6,3 +6,4 @@ checkpoints/*
 data/processed/*
 !data/processed/.gitkeep
 data/wikipedia_ar/raw/arwiki-latest-pages-articles-multistream.xml.bz2
+data/chat_history/raw/
