@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from inference.generate import load_checkpoint
-from training.chat_finetune import encode_example, finetune, prompt_ids, windows
+from training.chat_finetune import chat_bpc, encode_example, finetune, prompt_ids, windows
 from training.config import TrainConfig
 from training.train import train
 
@@ -69,6 +69,9 @@ class TestChatFinetune(unittest.TestCase):
             model, _, ckpt = load_checkpoint(root / "chat/best.pt", "cpu")
             self.assertEqual(ckpt["val_metric"], "chat_bpc")
             self.assertTrue((root / "chat/latest.pt").exists())
+            # evaluating must not switch an eval-mode model back to training mode (dropout on during generation)
+            chat_bpc(model, data["val"], torch.tensor(tok.token_char_lengths(), dtype=torch.float))
+            self.assertFalse(model.training)
 
 
 if __name__ == "__main__":

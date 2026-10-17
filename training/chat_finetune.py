@@ -90,7 +90,8 @@ def masked_nll(model, x, y, m):
 
 @torch.no_grad()
 def chat_bpc(model, data, char_len, batch_size=64):
-    """Bits per character of the assistant targets (the chat held-out loss)."""
+    """Bits per character of the assistant targets (the chat held-out loss). Leaves the model in the mode it was in."""
+    was_training = model.training
     model.eval()
     x, y, m = data
     total, chars = 0.0, 0.0
@@ -98,7 +99,7 @@ def chat_bpc(model, data, char_len, batch_size=64):
         nll, _ = masked_nll(model, x[i : i + batch_size], y[i : i + batch_size], m[i : i + batch_size])
         total += nll.item()
         chars += (char_len[y[i : i + batch_size]] * m[i : i + batch_size]).sum().item()
-    model.train()
+    model.train(was_training)
     return total / (LN2 * chars)
 
 
