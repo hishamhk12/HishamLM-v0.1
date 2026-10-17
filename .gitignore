@@ -8,3 +8,4 @@ data/processed/*
 data/raw/general/
 data/raw/private_books/
 data/wikipedia_ar/raw/
+data/chat_history/
